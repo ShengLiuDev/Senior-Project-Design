@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-
+import Header from './Header';
 function App() {
   const [testVar, setTestVar] = useState("");
 
@@ -13,10 +13,12 @@ function App() {
   }, []);
 
   return (
-    <div className="App">
-      <header className="App-header">
+    <div className="app">
+		<Header />
         <p>{testVar}</p>
-      </header>
+		<div className="app-content">
+              {'Dashboard'}
+          </div>
     </div>
   );
 }
