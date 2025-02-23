@@ -3,11 +3,18 @@
 	padding: 10px 20px;
 	color: white;
   }
-  .app-content {
+
+.app-content {
 	background-color: #000000;
 	padding: 10px 20px;
 	color: white;
 	display: flex;
-	justify-content: space-between;
+	justify-content: center;
 	align-items: center;
+	  border:1px solid black;
+	  top: 50%;
+	  text-align:center;
+	  left: 50%;
+	  width:200px;
+	  margin: auto;
 }
