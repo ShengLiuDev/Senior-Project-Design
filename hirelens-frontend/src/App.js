@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import Header from './Header';
+import './App.css';
 function App() {
   const [testVar, setTestVar] = useState("");
-
   useEffect(() => {
     fetch("http://localhost:5000")
       .then((response) => response.json())
@@ -13,13 +13,13 @@ function App() {
   }, []);
 
   return (
-    <div className="app">
+    <div>
 		<Header />
-        <p>{testVar}</p>
+		<p>{testVar}</p>
 		<div className="app-content">
-              {'Dashboard'}
-          </div>
-    </div>
+            Dashboard
+		</div>
+ </div>
   );
 }
 
