@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from 'react-router-dom';
 import Header from './Header';
 import './App.css';
 function App() {
@@ -15,10 +16,16 @@ function App() {
   return (
     <div>
 		<Header />
-		<p>{testVar}</p>
-		<div className="app-content">
-            Dashboard
+
+		<div className="app-content" style={{fontSize:'32px'}}>
+            HireLens
 		</div>
+		<div className="app-content" style={{fontSize:'28px'}}>
+            "From students, for students, by students"
+		</div>
+		<Link className="app-content">
+            Get started
+		</Link>
  </div>
   );
 }
