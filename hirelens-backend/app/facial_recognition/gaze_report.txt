@@ -1,0 +1,3 @@
+Total Frames: 304
+Frames Looking at Camera: 193
+Percentage Looking at Camera: 63.49%
