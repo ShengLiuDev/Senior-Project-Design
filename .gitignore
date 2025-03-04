@@ -1,3 +1,3 @@
 hirelens-backend/app/google-drive-api-information/credentials.json
 hirelens-backend/app/google-drive-api-information/token.json
-./venv
+hirelens-backend/venv
