@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link } from 'react-router-dom';
 import Header from './Header';
-import './App.css';
-function App() {
+import './FrontPage.css';
+function FrontPage() {
   const [testVar, setTestVar] = useState("");
   useEffect(() => {
     fetch("http://localhost:5000")
@@ -23,11 +23,11 @@ function App() {
 		<div className="app-content" style={{fontSize:'28px'}}>
             "From students, for students, by students"
 		</div>
-		<Link className="app-content">
+		<Link className="app-content" to="/Test">
             Get started
 		</Link>
  </div>
   );
 }
 
-export default App;
+export default FrontPage;
