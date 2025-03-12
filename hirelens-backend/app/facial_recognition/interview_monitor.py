@@ -1,9 +1,9 @@
 import cv2
 import numpy as np
 import mediapipe as mp
-from posture_analyzer import PostureAnalyzer
-from expression_analyzer import ExpressionAnalyzer
-from eye_contact_analyzer import EyeContactAnalyzer
+from .posture_analyzer import PostureAnalyzer
+from .eye_contact_analyzer import EyeContactAnalyzer
+from .expression_analyzer import ExpressionAnalyzer
 
 # Initialize MediaPipe Face Mesh
 mp_face_mesh = mp.solutions.face_mesh

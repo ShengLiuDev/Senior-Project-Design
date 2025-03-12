@@ -1,11 +1,16 @@
 from flask import Flask, Blueprint, jsonify, request
 from app.sheets_api import get_static_sheet_data
 from app.facial_recognition.interview_monitor import main as interview_monitor
+from flask_jwt_extended import jwt_required, get_jwt_identity
 import cv2
 import base64
 import numpy as np
 from flask_cors import CORS
 import time
+import mediapipe as mp
+from .facial_recognition.eye_contact_analyzer import EyeContactAnalyzer
+from .facial_recognition.posture_analyzer import PostureAnalyzer
+from .facial_recognition.expression_analyzer import ExpressionAnalyzer
 
 routes = Blueprint('routes', __name__)
 CORS(routes)  # Enable CORS for all routes
@@ -13,11 +18,19 @@ CORS(routes)  # Enable CORS for all routes
 # Global variables to manage interview state
 interview_sessions = {}  # Store multiple session states
 
+# Initialize MediaPipe Face Mesh for expression analysis
+mp_face_mesh = mp.solutions.face_mesh.FaceMesh(
+    static_image_mode=False,
+    max_num_faces=1,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5
+)
+
 class InterviewSession:
     def __init__(self, session_id):
         self.session_id = session_id
         self.running = False
-        self.frames = []  # Store frames for processing
+        self.frames = []  # Store frames only
         self.last_update = time.time()
 
     def add_frame(self, frame):
@@ -27,28 +40,24 @@ class InterviewSession:
 
     def process_interview(self):
         """Process all frames and return final scores"""
+        if not self.frames:
+            return {
+                "posture_score": 0.0,
+                "smile_percentage": 0.0,
+                "eye_contact_score": 0.0,
+                "overall_score": 0.0,
+                "total_frames": 0
+            }
+            
         # Initialize analyzers
-        from app.facial_recognition.eye_contact_analyzer import EyeContactAnalyzer
-        from app.facial_recognition.posture_analyzer import PostureAnalyzer
-        from app.facial_recognition.expression_analyzer import ExpressionAnalyzer
-        import mediapipe as mp
-        
         eye_contact_analyzer = EyeContactAnalyzer()
         posture_analyzer = PostureAnalyzer()
         expression_analyzer = ExpressionAnalyzer()
         
-        # Initialize MediaPipe Face Mesh
-        face_mesh = mp.solutions.face_mesh.FaceMesh(
-            static_image_mode=False,
-            max_num_faces=1,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        )
-
         # Process each frame
         for frame in self.frames:
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = face_mesh.process(frame_rgb)
+            results = mp_face_mesh.process(frame_rgb)
             
             # Analyze frame with each analyzer
             eye_contact_analyzer.analyze_frame(frame.copy())
@@ -89,15 +98,20 @@ def home():
     return jsonify({"message": "Welcome to HireLens API!"})
 
 @routes.route('/api/static-sheet-data', methods=['GET'])
+@jwt_required()
 def static_sheet():
     """API route to return data from the specific hardcoded sheet."""
+    current_user = get_jwt_identity()
     data, status_code = get_static_sheet_data()
     return jsonify(data), status_code
 
 @routes.route('/api/interview/start', methods=['POST'])
+@jwt_required()
 def start_interview():
-    """Initialize a new interview recording session"""
+    """Start a new interview session"""
+    current_user = get_jwt_identity()
     session_id = request.json.get('session_id')
+    
     if not session_id:
         return jsonify({
             "status": "error",
@@ -110,22 +124,33 @@ def start_interview():
             "message": "Session already exists"
         }), 400
     
-    # Create new session
-    session = InterviewSession(session_id)
-    session.running = True
-    interview_sessions[session_id] = session
-    
-    return jsonify({
-        "status": "success",
-        "message": "Interview recording started",
-        "session_id": session_id
-    })
+    try:
+        # Create new session
+        session = InterviewSession(session_id)
+        session.user_id = current_user
+        session.running = True
+        interview_sessions[session_id] = session
+        
+        return jsonify({
+            "status": "success",
+            "message": "Interview session started",
+            "session_id": session_id
+        })
+        
+    except Exception as e:
+        print(f"Error in start_interview: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error starting interview: {str(e)}"
+        }), 500
 
 @routes.route('/api/interview/record', methods=['POST'])
+@jwt_required()
 def record_frame():
-    """Record a frame from the interview"""
+    """Record a frame during the interview"""
+    current_user = get_jwt_identity()
     session_id = request.json.get('session_id')
-    frame_data = request.json.get('frame')  # Base64 encoded image
+    frame_data = request.json.get('frame')
     
     if not session_id or not frame_data:
         return jsonify({
@@ -134,35 +159,47 @@ def record_frame():
         }), 400
     
     session = interview_sessions.get(session_id)
-    if not session or not session.running:
+    if not session:
         return jsonify({
             "status": "error",
-            "message": "Invalid or inactive session"
-        }), 400
+            "message": "Session not found"
+        }), 404
     
-    try:
-        # Decode base64 image
-        frame_bytes = base64.b64decode(frame_data.split(',')[1])
-        nparr = np.frombuffer(frame_bytes, np.uint8)
-        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    # Verify user owns this session
+    if getattr(session, 'user_id', None) != current_user:
+        return jsonify({
+            "status": "error",
+            "message": "Unauthorized access to session"
+        }), 403
         
-        # Add frame to session
+    try:
+        # Convert base64 frame to numpy array
+        frame_data = frame_data.split(',')[1]  # Remove data URL prefix
+        frame_bytes = base64.b64decode(frame_data)
+        frame_array = np.frombuffer(frame_bytes, dtype=np.uint8)
+        frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+        
+        # Store frame
         session.add_frame(frame)
         
         return jsonify({
             "status": "success",
+            "message": "Frame recorded successfully",
             "frames_recorded": len(session.frames)
         })
         
     except Exception as e:
+        print(f"Error in record_frame: {str(e)}")
         return jsonify({
             "status": "error",
             "message": f"Error recording frame: {str(e)}"
         }), 500
 
 @routes.route('/api/interview/stop', methods=['POST'])
+@jwt_required()
 def stop_interview():
     """Stop recording and process the entire interview"""
+    current_user = get_jwt_identity()
     session_id = request.json.get('session_id')
     
     if not session_id:
@@ -178,9 +215,30 @@ def stop_interview():
             "message": "Session not found"
         }), 404
     
+    # Verify user owns this session
+    if getattr(session, 'user_id', None) != current_user:
+        return jsonify({
+            "status": "error",
+            "message": "Unauthorized access to session"
+        }), 403
+    
     try:
         # Stop recording
         session.running = False
+        
+        # Check if we have any frames to process
+        if not session.frames:
+            return jsonify({
+                "status": "warning",
+                "message": "No frames were recorded in this session",
+                "final_scores": {
+                    "posture_score": 0.0,
+                    "smile_percentage": 0.0,
+                    "eye_contact_score": 0.0,
+                    "overall_score": 0.0,
+                    "total_frames": 0
+                }
+            })
         
         # Process all frames
         print(f"Processing {len(session.frames)} frames...")
@@ -195,9 +253,101 @@ def stop_interview():
             "final_scores": final_scores
         })
     except Exception as e:
+        print(f"Error in stop_interview: {str(e)}")
         return jsonify({
             "status": "error",
             "message": f"Error processing interview: {str(e)}"
+        }), 500
+
+@routes.route('/api/interview/test', methods=['POST'])
+@jwt_required()
+def test_interview():
+    """Test endpoint that runs the interview monitor directly using the camera"""
+    current_user = get_jwt_identity()
+    session_id = request.json.get('session_id', 'test_session')
+    
+    try:
+        # Create new session
+        session = InterviewSession(session_id)
+        session.user_id = current_user
+        session.running = True
+        interview_sessions[session_id] = session
+        
+        # Initialize camera
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Use DirectShow on Windows
+        
+        if not cap.isOpened():
+            return jsonify({
+                "status": "error",
+                "message": "Could not open camera"
+            }), 500
+            
+        print("\nStarting test interview recording...")
+        print("Recording frames for 10 seconds...")
+        
+        # Record for 10 seconds (approximately 300 frames at 30 fps)
+        start_time = time.time()
+        frame_count = 0
+        
+        while time.time() - start_time < 10:  # 10 second recording
+            ret, frame = cap.read()
+            if not ret:
+                break
+                
+            frame_count += 1
+            
+            # Store frame
+            session.add_frame(frame.copy())
+            
+            # Display frame with recording indicator
+            cv2.putText(frame, "Recording...", (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            cv2.putText(frame, f"Frames: {frame_count}", (10, 60),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            
+            cv2.imshow('Test Interview', frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+        
+        # Clean up
+        cap.release()
+        cv2.destroyAllWindows()
+        
+        # Process results
+        if not session.frames:
+            return jsonify({
+                "status": "warning",
+                "message": "No frames were recorded",
+                "final_scores": {
+                    "posture_score": 0.0,
+                    "smile_percentage": 0.0,
+                    "eye_contact_score": 0.0,
+                    "overall_score": 0.0,
+                    "total_frames": 0
+                }
+            })
+        
+        print(f"\nProcessing {len(session.frames)} frames...")
+        # Get final scores
+        final_scores = session.process_interview()
+        
+        # Cleanup session
+        del interview_sessions[session_id]
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Test interview completed successfully. Processed {frame_count} frames.",
+            "final_scores": final_scores
+        })
+        
+    except Exception as e:
+        print(f"Error in test_interview: {str(e)}")
+        if 'cap' in locals():
+            cap.release()
+        cv2.destroyAllWindows()
+        return jsonify({
+            "status": "error",
+            "message": f"Error during test interview: {str(e)}"
         }), 500
 
 # Cleanup inactive sessions periodically
@@ -210,3 +360,4 @@ def cleanup_inactive_sessions():
     ]
     for session_id in inactive_sessions:
         del interview_sessions[session_id]
+

@@ -28,5 +28,4 @@ uritemplate
 urllib3
 opencv-python
 numpy
-scipy
-mediapipe
+flask_jwt_extended

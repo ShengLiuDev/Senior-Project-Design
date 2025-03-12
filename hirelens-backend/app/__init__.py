@@ -1,22 +1,22 @@
 from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager
 from config import Config
 
-db = SQLAlchemy()
+jwt = JWTManager()
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    db.init_app(app)
+    # Initialize extensions
+    jwt.init_app(app)
     CORS(app)
 
     # Register Blueprints
-    from app.routes import routes  # Import routes
-    app.register_blueprint(routes)  # Register blueprint
-
-    with app.app_context():
-        db.create_all()
+    from app.routes import routes
+    from app.auth import auth
+    app.register_blueprint(routes)
+    app.register_blueprint(auth, url_prefix='/auth')
 
     return app
