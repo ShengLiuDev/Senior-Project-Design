@@ -23,7 +23,7 @@ function FrontPage() {
 		<div className="app-content" style={{fontSize:'28px'}}>
             "From students, for students, by students"
 		</div>
-		<Link className="app-content" to="/Test">
+		<Link className="app-content" to="/Login">
             Get started
 		</Link>
  </div>
