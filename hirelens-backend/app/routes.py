@@ -1,7 +1,7 @@
 from flask import Flask, Blueprint, jsonify, request
 from app.sheets_api import get_static_sheet_data
 from app.facial_recognition.interview_monitor import main as interview_monitor
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 import cv2
 import base64
 import numpy as np
@@ -11,9 +11,16 @@ import mediapipe as mp
 from .facial_recognition.eye_contact_analyzer import EyeContactAnalyzer
 from .facial_recognition.posture_analyzer import PostureAnalyzer
 from .facial_recognition.expression_analyzer import ExpressionAnalyzer
+from datetime import datetime
+from pymongo import MongoClient
 
 routes = Blueprint('routes', __name__)
 CORS(routes)  # Enable CORS for all routes
+
+# Initialize MongoDB connection
+client = MongoClient()
+db = client.hirelens
+interviews = db.interviews  # Create interviews collection
 
 # Global variables to manage interview state
 interview_sessions = {}  # Store multiple session states
@@ -32,6 +39,9 @@ class InterviewSession:
         self.running = False
         self.frames = []  # Store frames only
         self.last_update = time.time()
+        self.start_time = datetime.utcnow()
+        self.email = ""
+        self.name = ""
 
     def add_frame(self, frame):
         """Add a frame to the session"""
@@ -244,14 +254,36 @@ def stop_interview():
         print(f"Processing {len(session.frames)} frames...")
         final_scores = session.process_interview()
         
-        # Cleanup
+        # Calculate duration
+        duration = (datetime.utcnow() - session.start_time).total_seconds()
+        
+        # Get user info from JWT token
+        jwt_data = get_jwt()
+        user_email = jwt_data.get('email', '')
+        user_name = jwt_data.get('name', '')
+        
+        # Store results in MongoDB
+        interview_result = {
+            "userId": current_user,
+            "email": user_email,
+            "name": user_name,
+            "date": datetime.utcnow(),
+            "duration": duration,
+            "scores": final_scores
+        }
+        
+        result = interviews.insert_one(interview_result)
+        
+        # Cleanup session
         del interview_sessions[session_id]
         
         return jsonify({
             "status": "success",
-            "message": "Interview processed successfully",
+            "message": "Interview results saved successfully",
+            "interview_id": str(result.inserted_id),
             "final_scores": final_scores
         })
+        
     except Exception as e:
         print(f"Error in stop_interview: {str(e)}")
         return jsonify({
@@ -273,17 +305,35 @@ def test_interview():
         session.running = True
         interview_sessions[session_id] = session
         
-        # Initialize camera
-        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Use DirectShow on Windows
+        # Try different camera indices and backends
+        camera_indices = [0, 1]  # Try first two camera indices
+        backends = [cv2.CAP_DSHOW, cv2.CAP_ANY]  # Try DirectShow and default backend
         
-        if not cap.isOpened():
+        cap = None
+        for index in camera_indices:
+            for backend in backends:
+                try:
+                    print(f"Trying camera index {index} with backend {backend}")
+                    cap = cv2.VideoCapture(index + backend)
+                    if cap.isOpened():
+                        print(f"Successfully opened camera {index} with backend {backend}")
+                        break
+                except Exception as e:
+                    print(f"Failed to open camera {index} with backend {backend}: {str(e)}")
+                    if cap is not None:
+                        cap.release()
+            if cap is not None and cap.isOpened():
+                break
+        
+        if not cap or not cap.isOpened():
             return jsonify({
                 "status": "error",
-                "message": "Could not open camera"
+                "message": "Could not open any camera. Please check if your camera is connected and not in use by another application."
             }), 500
             
         print("\nStarting test interview recording...")
         print("Recording frames for 10 seconds...")
+        print("Press 'q' to stop recording early")
         
         # Record for 10 seconds (approximately 300 frames at 30 fps)
         start_time = time.time()
@@ -292,6 +342,7 @@ def test_interview():
         while time.time() - start_time < 10:  # 10 second recording
             ret, frame = cap.read()
             if not ret:
+                print("Error reading frame from camera")
                 break
                 
             frame_count += 1
@@ -348,6 +399,34 @@ def test_interview():
         return jsonify({
             "status": "error",
             "message": f"Error during test interview: {str(e)}"
+        }), 500
+
+@routes.route('/api/interview/history', methods=['GET'])
+@jwt_required()
+def get_interview_history():
+    """Get all interviews for the current user"""
+    current_user = get_jwt_identity()
+    
+    try:
+        # Get all interviews for the user, sorted by date
+        user_interviews = list(interviews.find(
+            {"userId": current_user}
+        ).sort("date", -1))
+        
+        # Convert ObjectId to string for JSON serialization
+        for interview in user_interviews:
+            interview['_id'] = str(interview['_id'])
+        
+        return jsonify({
+            "status": "success",
+            "interviews": user_interviews
+        })
+        
+    except Exception as e:
+        print(f"Error getting interview history: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error retrieving interview history: {str(e)}"
         }), 500
 
 # Cleanup inactive sessions periodically
