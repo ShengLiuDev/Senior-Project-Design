@@ -6,7 +6,7 @@ function CreateAccount() {
 		<div>
 			<Header />
 			<div className="app-content" style={{fontSize:'32px'}}>
-			createaccount
+			send to google api ig
 		</div>
 		<Link className="app-content" to="/Login" style={{fontSize:'32px'}}>
             Create account and return to login
