@@ -5,4 +5,4 @@ hirelens-backend/.env
 hirelens-backend/app/__pycache__
 hirelens-backend/__pycache__
 hirelens-backend/app/google-drive-api-information/__pycache__
-hirelens-backend/app/facial-recognition/__pycache__
+hirelens-backend/app/facial_recognition/__pycache__
