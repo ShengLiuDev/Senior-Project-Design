@@ -429,6 +429,40 @@ def get_interview_history():
             "message": f"Error retrieving interview history: {str(e)}"
         }), 500
 
+@routes.route('/api/interview/results', methods=['GET'])
+@jwt_required()
+def get_all_results():
+    try:
+        current_user_id = get_jwt_identity()
+        print(f"Fetching results for user: {current_user_id}")
+        
+        # Query all results for the user from MongoDB, ordered by date
+        results = list(interviews.find(
+            {"userId": current_user_id}
+        ).sort("date", -1))
+        
+        print(f"Found {len(results)} results")
+        
+        # Format results
+        formatted_results = [{
+            'id': str(result['_id']),
+            'created_at': result['date'].strftime('%Y-%m-%d %H:%M:%S'),
+            'overall_score': result['scores']['overall_score'],
+            'posture_score': result['scores']['posture_score'],
+            'eye_contact_score': result['scores']['eye_contact_score'],
+            'smile_percentage': result['scores']['smile_percentage']
+        } for result in results]
+        
+        print("Formatted results:", formatted_results)
+        
+        return jsonify({
+            'results': formatted_results
+        }), 200
+        
+    except Exception as e:
+        print(f"Error retrieving results: {str(e)}")
+        return jsonify({'error': 'Failed to retrieve results'}), 500
+
 # Cleanup inactive sessions periodically
 def cleanup_inactive_sessions():
     """Remove sessions that haven't been updated in 5 minutes"""
