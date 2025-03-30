@@ -11,7 +11,7 @@ def create_app():
 
     # Initialize extensions
     jwt.init_app(app)
-    CORS(app)
+    CORS(app, supports_credentials=True, resources={r"/*": {"origins": "http://localhost:3000"}})
 
     # Register Blueprints
     from app.routes import routes

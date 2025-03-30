@@ -125,7 +125,12 @@ def google_callback():
 
         print("\n=== OAuth Flow Completed Successfully ===")
         
-        # Always return JSON response
+        # If it's a GET request, redirect to frontend with token
+        if request.method == 'GET':
+            frontend_url = "http://localhost:3000/login/callback"
+            return redirect(f"{frontend_url}?token={access_token}")
+        
+        # For POST requests, return JSON response
         return jsonify({
             "access_token": access_token,
             "user": user_info

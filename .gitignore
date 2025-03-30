@@ -2,3 +2,7 @@ hirelens-backend/app/google-drive-api-information/credentials.json
 hirelens-backend/app/google-drive-api-information/token.json
 hirelens-backend/venv
 hirelens-backend/.env
+hirelens-backend/app/__pycache__
+hirelens-backend/__pycache__
+hirelens-backend/app/google-drive-api-information/__pycache__
+hirelens-backend/app/facial_recognition/__pycache__
