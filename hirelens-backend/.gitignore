@@ -36,3 +36,11 @@ ENV/
 
 # Logs
 *.log 
+
+# Audio files
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.flac
+*.aac
