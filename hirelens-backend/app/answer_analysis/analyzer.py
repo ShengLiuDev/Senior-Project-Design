@@ -17,6 +17,11 @@ class AnswerAnalyzer:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             # "HTTP-Referer": "https://github.com/ShengLiuDev/Senior-Project-Design",
+        """
+        The HTTP-Referer header is used to specify the referrer URL of the page that linked to the resource.
+        This is used to track the source of the request and to prevent abuse. When we go to production, 
+        we can remove this header. For now, we are using localhost for development.
+        """
             "HTTP-Referer": "http://localhost:3000",  # Using localhost for development
             "X-Title": "HireLens"
         }
