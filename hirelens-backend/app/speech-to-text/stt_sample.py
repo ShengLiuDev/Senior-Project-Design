@@ -22,7 +22,8 @@ def ensure_recordings_dir():
     os.makedirs(recordings_dir, exist_ok=True)
     return recordings_dir
 
-def record_audio(filename, duration=90):
+# set to 90 second duration for production, testing for now with 20 second duration
+def record_audio(filename, duration=20):
     """
     Record audio for specified duration
     """
@@ -118,8 +119,8 @@ def main():
         "What are your greatest strengths and how have they helped you in your career?"
     ]
     
-    for i in range(3):
-        print(f"\nRecording {i+1} of 3")
+    for i in range(2):
+        print(f"\nRecording {i+1} of 2")
         print(f"Question: {questions[i]}")
         input("Press Enter to start recording...")
         

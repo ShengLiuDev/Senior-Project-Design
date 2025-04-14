@@ -11,5 +11,5 @@ GOOGLE_SHEETS_CREDENTIALS = os.getenv('GOOGLE_SHEETS_CREDENTIALS')
 # API endpoints
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# model config using the 33b version of the deepseek coder
-DEEPSEEK_MODEL = "deepseek-ai/deepseek-coder-33b-instruct" 
+# model config using DeepSeek R1 free version
+DEEPSEEK_MODEL = "deepseek/deepseek-r1:free" 

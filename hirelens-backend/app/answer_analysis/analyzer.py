@@ -16,7 +16,8 @@ class AnswerAnalyzer:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/ShengLiuDev/Senior-Project-Design",
+            # "HTTP-Referer": "https://github.com/ShengLiuDev/Senior-Project-Design",
+            "HTTP-Referer": "http://localhost:3000",  # Using localhost for development
             "X-Title": "HireLens"
         }
 
@@ -25,11 +26,11 @@ class AnswerAnalyzer:
         Answer: {answer}
 
         Please analyze this answer and provide:
-        1. Content Quality (1-10)
-        2. Clarity (1-10)
-        3. Relevance (1-10)
+        1. Content Quality (1.0-10.0)
+        2. Clarity (1.0-10.0)
+        3. Relevance (1.0-10.0)
         4. Specific Examples (Yes/No)
-        5. Overall Score (1-10)
+        5. Overall Score (1.0-10.0)
         6. Key Strengths
         7. Areas for Improvement
         8. Suggested Follow-up Questions
@@ -39,16 +40,56 @@ class AnswerAnalyzer:
             "model": self.model,
             "messages": [
                 {"role": "user", "content": prompt}
-            ]
+            ],
+            "temperature": 0.7,
+            "max_tokens": 1000
         }
 
         try:
-            response = requests.post(self.api_url, headers=headers, json=data)
-            response.raise_for_status()
-            result = response.json()
-            return result['choices'][0]['message']['content']
+            print("\nDebugging API Request:")
+            print(f"API URL: {self.api_url}")
+            print(f"Model: {self.model}")
+            print(f"Headers: {headers}")
+            print(f"Request data: {json.dumps(data, indent=2)}")
+            print("Sending request to OpenRouter API...")
+            
+            # Add timeout to prevent infinite waiting
+            response = requests.post(
+                self.api_url, 
+                headers=headers, 
+                json=data,
+                timeout=30  # 30 second timeout
+            )
+            
+            # Print response status and content for debugging
+            print(f"\nResponse status: {response.status_code}")
+            print(f"Response headers: {dict(response.headers)}")
+            print(f"Response content type: {response.headers.get('content-type', 'unknown')}")
+            print(f"Response content preview: {response.text[:500]}...")
+            
+            if response.status_code != 200:
+                return f"API Error: {response.status_code} - {response.text}"
+            
+            # Check if response is HTML
+            if 'text/html' in response.headers.get('content-type', '').lower():
+                return "Error: Received HTML response instead of JSON. This usually means the API key is invalid or the endpoint is incorrect."
+                
+            # Try to parse the response
+            try:
+                result = response.json()
+                if 'choices' in result and len(result['choices']) > 0:
+                    return result['choices'][0]['message']['content']
+                else:
+                    return "Error: Unexpected API response format"
+            except json.JSONDecodeError as e:
+                return f"Error parsing API response: {str(e)}"
+                
+        except requests.exceptions.Timeout:
+            return "Error: Request timed out after 30 seconds"
+        except requests.exceptions.RequestException as e:
+            return f"Request Error: {str(e)}"
         except Exception as e:
-            return f"Error analyzing answer: {str(e)}"
+            return f"Unexpected Error: {str(e)}"
     
     def analyze_qa_pairs(self, qa_pairs: Dict) -> List[Dict]:
         """
