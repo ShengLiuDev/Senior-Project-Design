@@ -15,7 +15,9 @@ class AnswerAnalyzer:
         """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/ShengLiuDev/Senior-Project-Design",
+            "X-Title": "HireLens"
         }
 
         prompt = f"""

@@ -4,6 +4,11 @@ from dotenv import load_dotenv
 
 load_dotenv()  # Load environment variables
 
+# OpenRouter API Configuration
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+DEEPSEEK_MODEL = "deepseek-ai/deepseek-coder-33b-instruct"
+
 class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'supersecretkey')
     SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'sqlite:///site.db')
