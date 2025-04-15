@@ -7,7 +7,7 @@ load_dotenv()  # Load environment variables
 # OpenRouter API Configuration
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEEPSEEK_MODEL = "deepseek/deepseek-r1:free"
+OPENROUTER_MODEL = "deepseek/deepseek-r1:free"
 
 # 
 

@@ -206,7 +206,8 @@ def main():
             analysis = analyze_answer(text, question)
             
             print("\nAnalysis Results:")
-            print(analysis)
+            for key, value in analysis.items():
+                print(f"{key}: {value}\n")
             print("-" * 50)
             
             # Ask if user wants to try again

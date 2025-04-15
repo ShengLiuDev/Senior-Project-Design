@@ -47,19 +47,26 @@ class AnswerAnalyzer:
         
         The candidate's answer is: "{answer}"
         
-        Please analyze the candidate's answer and provide:
-        1. A score from 1-10 based on how well it matches the quality of the good answer
+        Please analyze the candidate's answer and provide a JSON response with the following structure:
+        {{
+            "score": <number between 1-10>,\n
+            "strengths": ["strength1", "strength2", ...],\n
+            "improvements": ["improvement1", "improvement2", ...],\n
+            "suggestions": ["suggestion1", "suggestion2", ...],\n
+            "competencies": ["competency1", "competency2", ...]\n
+        }}
+        
+        Focus on:
+        1. How well the answer matches the quality of the good answer
         2. Key strengths in their response
         3. Areas for improvement
-        4. Specific suggestions for how they could improve their answer
-        5. Whether their answer demonstrates the key competencies expected for this question
+        4. Specific suggestions for improvement
+        5. Key competencies demonstrated
         
-        Format your response as a JSON object with these keys:
-        - score (number)
-        - strengths (array of strings)
-        - improvements (array of strings)
-        - suggestions (array of strings)
-        - competencies (array of strings)
+        NOTE: if a users answer encompasses a majority of a good answer they should
+        be scoring higher than a 6 to 7, hovering around 8 to 9. However, if the user
+        provides a response that is not very relevant to the question, they should
+        score lower than a 4.
         """
         
         # Make the API request
@@ -79,37 +86,76 @@ class AnswerAnalyzer:
         }
         
         try:
+            print("\nMaking API request...")
+            print(f"API URL: {self.api_url}")
+            print(f"Model: {self.model}")
+            print(f"Headers: {headers}")
+            
             response = requests.post(self.api_url, headers=headers, json=data, timeout=30)
-            response.raise_for_status()
+            print(f"\nResponse status code: {response.status_code}")
+            print(f"Response headers: {response.headers}")
+            
+            # Check for error responses
+            if response.status_code != 200:
+                error_response = response.json()
+                print(f"\nError response: {error_response}")
+                return {
+                    "error": "API request failed",
+                    "status_code": response.status_code,
+                    "details": error_response.get("error", {}).get("message", "Unknown error")
+                }
             
             # Parse the response
             result = response.json()
-            analysis = json.loads(result['choices'][0]['message']['content'])
+            print("\nAPI Response received")
+            print(f"Response content: {result}")
             
-            return {
-                "score": analysis.get("score", 0),
-                "strengths": analysis.get("strengths", []),
-                "improvements": analysis.get("improvements", []),
-                "suggestions": analysis.get("suggestions", []),
-                "competencies": analysis.get("competencies", []),
-                "reference_positive": reference_answers['positive'],
-                "reference_negative": reference_answers['negative']
-            }
+            if 'choices' not in result or not result['choices']:
+                raise ValueError("Invalid API response format: missing choices")
+                
+            content = result['choices'][0]['message']['content']
+            print("\nParsing content...")
+            print(f"Raw content: {content}")
+            
+            # Try to find JSON in the content
+            try:
+                # Find the first { and last } to extract JSON
+                start = content.find('{')
+                end = content.rfind('}') + 1
+                if start == -1 or end == 0:
+                    raise ValueError("No JSON object found in response")
+                    
+                json_str = content[start:end]
+                print(f"\nExtracted JSON string: {json_str}")
+                analysis = json.loads(json_str)
+                
+                return {
+                    "score": analysis.get("score", 0),
+                    "strengths": analysis.get("strengths", []),
+                    "improvements": analysis.get("improvements", []),
+                    "suggestions": analysis.get("suggestions", []),
+                    "competencies": analysis.get("competencies", []),
+                    "reference_positive": reference_answers['positive'],
+                    "reference_negative": reference_answers['negative']
+                }
+                
+            except json.JSONDecodeError as e:
+                print(f"\nError parsing JSON: {str(e)}")
+                print(f"Content received: {content}")
+                return {
+                    "error": "Failed to parse analysis",
+                    "details": str(e),
+                    "raw_content": content
+                }
             
         except requests.exceptions.RequestException as e:
-            print(f"Error making API request: {str(e)}")
+            print(f"\nError making API request: {str(e)}")
             return {
                 "error": "Failed to analyze answer",
                 "details": str(e)
             }
-        except json.JSONDecodeError as e:
-            print(f"Error parsing API response: {str(e)}")
-            return {
-                "error": "Invalid response format",
-                "details": str(e)
-            }
         except Exception as e:
-            print(f"Unexpected error: {str(e)}")
+            print(f"\nUnexpected error: {str(e)}")
             return {
                 "error": "Unexpected error occurred",
                 "details": str(e)
