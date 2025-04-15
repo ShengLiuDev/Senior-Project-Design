@@ -20,10 +20,10 @@ import pandas as pd
 
 # get the CSV reader and grab the data from LatinCsvReadInFunctions class
 csv_reader = csv_read_in_functions("../dataset/hirevue-answer-sheet.csv")
-sentences_data = csv_reader.grab_sentences_and_sentiment()
+sentence_data = csv_reader.grab_sentences_and_sentiment()
 
 class sentiment_analysis:
-    def __init__(self, sentences_data, model_name="distilbert/distilbert-base-uncased-finetuned-sst-2-english"):
+    def __init__(self, sentences_data = sentence_data, model_name="distilbert/distilbert-base-uncased-finetuned-sst-2-english"):
         from transformers import DistilBertForSequenceClassification, DistilBertTokenizer
         csv_reader = csv_read_in_functions("../dataset/hirevue-answer-sheet.csv")
         sentences_data = csv_reader.grab_sentences_and_sentiment()
