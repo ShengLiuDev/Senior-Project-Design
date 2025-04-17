@@ -7,13 +7,15 @@ from datetime import datetime
 from RealtimeSTT import AudioToTextRecorder
 import pyaudio
 import platform
+import random
 
-# Add the parent directory to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(os.path.dirname(current_dir))  # This goes up to hirelens-backend
-sys.path.append(parent_dir)
+# Add the project root to Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(project_root)
 
 from app.answer_analysis.analyzer import AnswerAnalyzer
+from app.sentiment_analysis.sentiment_analysis_functions import sentiment_analysis
+from app.sentiment_analysis.csv_readin_functions import csv_read_in_functions
 
 # Import appropriate module based on OS for key detection
 if platform.system() == 'Windows':
@@ -27,7 +29,7 @@ def ensure_recordings_dir():
     """
     Create .recordings directory if it doesn't exist
     """
-    recordings_dir = os.path.join(current_dir, '.recordings')
+    recordings_dir = os.path.join(project_root, '.recordings')
     os.makedirs(recordings_dir, exist_ok=True)
     return recordings_dir
 
@@ -159,11 +161,40 @@ def check_for_key(stop_event):
 
 def analyze_answer(text, question):
     """
-    Analyze the transcribed answer using the AnswerAnalyzer
+    Analyze the transcribed answer using the AnswerAnalyzer and sentiment_analysis classes
     """
-    analyzer = AnswerAnalyzer()
-    analysis = analyzer.analyze_answer(question, text)
+    # Initialize analyzers
+    answer_analyzer = AnswerAnalyzer()
+    sentiment_analyzer = sentiment_analysis()
+    
+    # Get answer analysis
+    analysis = answer_analyzer.analyze_answer(question, text)
+    
+    # Get sentiment analysis
+    sentiment_result = sentiment_analyzer.predict(text)
+    
+    # Add sentiment information to the analysis
+    analysis['sentiment'] = sentiment_result
+    
+    # If sentiment is negative, provide a positive reformulation
+    if sentiment_result == 'negative':
+        analysis['positive_reformulation'] = sentiment_analyzer.reformulate_positive(text)
+    
     return analysis
+
+def get_random_questions(num_questions=3):
+    """Get a list of random interview questions from the dataset"""
+    try:
+        # Initialize the AnswerAnalyzer
+        analyzer = AnswerAnalyzer()
+        
+        # Get questions from the dataset
+        questions = analyzer.get_random_questions(num_questions)
+        
+        return questions
+    except Exception as e:
+        print(f"Error getting random questions: {e}")
+        return []
 
 def main():
     print("Speech-to-Text Analysis Program")
@@ -173,12 +204,9 @@ def main():
     # Ensure recordings directory exists
     recordings_dir = ensure_recordings_dir()
     
-    # Sample questions for testing
-    questions = [
-        "Tell me about a time when you faced a difficult challenge at work and how you handled it.",
-        "Describe a situation where you had to work with a difficult team member.",
-        "What are your greatest strengths and how have they helped you in your career?"
-    ]
+    # Initialize analyzer and get random questions
+    analyzer = AnswerAnalyzer()
+    questions = analyzer.get_random_questions(num_questions=3)
     
     # Initialize speech detector
     detector = SpeechDetector()

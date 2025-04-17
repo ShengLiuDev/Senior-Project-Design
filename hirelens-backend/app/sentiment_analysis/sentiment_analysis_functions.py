@@ -1,31 +1,28 @@
-# %pip install pandas
-# # upgrades accelerate to at least 0.26.0
-# %pip install "accelerate>=0.26.0"
-# # installs huggingface_hub as needed 
-# %pip install huggingface_hub
-# # installs pytorch as needed
-
-# ensure dependencies are installed properly
 from transformers import Trainer, TrainingArguments
 from torch.utils.data import Dataset
 import torch
 import accelerate
 import pandas as pd
+import os
+import sys
+import requests
+from app.sentiment_analysis.csv_readin_functions import csv_read_in_functions
 
-# %load_ext autoreload
-# %autoreload 2
-# %reload_ext autoreload
-# # should reload kernel as needed
-# # stackoverflow article: https://stackoverflow.com/questions/63595912/how-to-restart-kernel-in-vscode-to-completely-reload-imports
+# Add the project root to Python path
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(PROJECT_ROOT)
+
+# Get the project root directory
+DATASET_PATH = os.path.join(PROJECT_ROOT, 'app', 'dataset', 'hirevue-answer-sheet.csv')
 
 # get the CSV reader and grab the data from LatinCsvReadInFunctions class
-csv_reader = csv_read_in_functions("../dataset/hirevue-answer-sheet.csv")
+csv_reader = csv_read_in_functions(DATASET_PATH)
 sentence_data = csv_reader.grab_sentences_and_sentiment()
 
 class sentiment_analysis:
     def __init__(self, sentences_data = sentence_data, model_name="distilbert/distilbert-base-uncased-finetuned-sst-2-english"):
         from transformers import DistilBertForSequenceClassification, DistilBertTokenizer
-        csv_reader = csv_read_in_functions("../dataset/hirevue-answer-sheet.csv")
+        csv_reader = csv_read_in_functions(DATASET_PATH)
         sentences_data = csv_reader.grab_sentences_and_sentiment()
         
         tokenizer = DistilBertTokenizer.from_pretrained(model_name)
@@ -108,7 +105,76 @@ class sentiment_analysis:
         )
         trainer.train()
 
+    def predict(self, text):
+        """
+        Predict the sentiment of a given text
+        Returns 'positive' or 'negative'
+        """
+        # Tokenize the input text
+        inputs = self.tokenizer(text, return_tensors="pt", truncation=True, padding=True)
+        
+        # Move inputs to the same device as the model
+        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+        
+        # Get model predictions
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            predictions = torch.argmax(outputs.logits, dim=-1)
+            
+        # Convert prediction to sentiment label
+        sentiment = "positive" if predictions.item() == 0 else "negative"
+        return sentiment
+
+    def reformulate_positive(self, text):
+        """
+        Generate a more positive version of the given text
+        """
+        prompt = f"""
+        You are an expert interviewer helping a candidate improve their answer.
+        The candidate's answer is: "{text}"
+        
+        Please provide a more positive and constructive version of this answer,
+        maintaining the same key points but with a more optimistic and confident tone.
+        Focus on:
+        1. Using positive language
+        2. Emphasizing strengths and achievements
+        3. Maintaining professionalism
+        4. Keeping the same core message
+        """
+        
+        # Make the API request
+        headers = {
+            "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
+            "HTTP-Referer": "http://localhost:3000",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "deepseek/deepseek-r1:free",
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 500
+        }
+        
+        try:
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=data,
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            content = response.json()["choices"][0]["message"]["content"]
+            return content.strip()
+            
+        except Exception as e:
+            print(f"Error generating positive reformulation: {str(e)}")
+            return "Unable to generate positive reformulation at this time."
+
 # testing
-lsa = sentiment_analysis(sentences_data)
-dataset = lsa.prepare_dataset()
-lsa.train(dataset)
+# lsa = sentiment_analysis(sentences_data)
+# dataset = lsa.prepare_dataset()
+# lsa.train(dataset)

@@ -3,6 +3,7 @@ import sys
 import json
 import requests
 import pandas as pd
+import random
 from config import OPENROUTER_API_KEY, OPENROUTER_API_URL, OPENROUTER_MODEL
 from typing import Dict, List, Any
 
@@ -18,6 +19,47 @@ class AnswerAnalyzer:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         answer_sheet_path = os.path.join(current_dir, '..', 'dataset', 'hirevue-answer-sheet.csv')
         return pd.read_csv(answer_sheet_path)
+
+    def get_random_questions(self, num_questions: int = 3) -> List[str]:
+        """
+        Select random questions from the answer sheet, ensuring no two questions
+        start with the same word.
+        
+        Args:
+            num_questions: Number of questions to select (default: 3)
+            
+        Returns:
+            List of randomly selected questions
+        """
+        # Get all questions from the answer sheet
+        all_questions = self.answer_sheet['BEHAVIORAL_QUESTIONS'].tolist()
+        
+        # Create a dictionary to track first words
+        first_words = {}
+        selected_questions = []
+        
+        # Shuffle the questions to ensure randomness
+        random.shuffle(all_questions)
+        
+        for question in all_questions:
+            # Get the first word of the question
+            first_word = question.split()[0].lower()
+            
+            # If we haven't seen this first word before and we haven't selected enough questions
+            if first_word not in first_words and len(selected_questions) < num_questions:
+                selected_questions.append(question)
+                first_words[first_word] = True
+                
+            # If we've selected enough questions, break the loop
+            if len(selected_questions) >= num_questions:
+                break
+        
+        # If we couldn't find enough unique questions, add remaining questions
+        if len(selected_questions) < num_questions:
+            remaining_questions = [q for q in all_questions if q not in selected_questions]
+            selected_questions.extend(remaining_questions[:num_questions - len(selected_questions)])
+        
+        return selected_questions
 
     def _get_reference_answers(self, question: str) -> Dict[str, str]:
         """Get reference positive and negative answers for a given question"""
@@ -49,7 +91,7 @@ class AnswerAnalyzer:
         
         Please analyze the candidate's answer and provide a JSON response with the following structure:
         {{
-            "score": <number between 1-10>,\n
+            "score": <number between 1.0-10.0>,\n
             "strengths": ["strength1", "strength2", ...],\n
             "improvements": ["improvement1", "improvement2", ...],\n
             "suggestions": ["suggestion1", "suggestion2", ...],\n
@@ -64,9 +106,12 @@ class AnswerAnalyzer:
         5. Key competencies demonstrated
         
         NOTE: if a users answer encompasses a majority of a good answer they should
-        be scoring higher than a 6 to 7, hovering around 8 to 9. However, if the user
+        be scoring higher than a 6.0 to 7.0, hovering around 8.0 to 9.0. However, if the user
         provides a response that is not very relevant to the question, they should
-        score lower than a 4.
+        score lower than a 4.0.
+        
+        Additional Note: If a user's answer is in STAR format, give additional points for the STAR format. 
+        Else deduct points for not using the STAR format.
         """
         
         # Make the API request
@@ -129,6 +174,7 @@ class AnswerAnalyzer:
                 print(f"\nExtracted JSON string: {json_str}")
                 analysis = json.loads(json_str)
                 
+                # User feedback will be given here
                 return {
                     "score": analysis.get("score", 0),
                     "strengths": analysis.get("strengths", []),
