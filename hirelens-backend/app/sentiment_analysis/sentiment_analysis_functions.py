@@ -12,33 +12,27 @@ from app.sentiment_analysis.csv_readin_functions import csv_read_in_functions
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.append(PROJECT_ROOT)
 
-# Get the project root directory
-DATASET_PATH = os.path.join(PROJECT_ROOT, 'app', 'dataset', 'hirevue-answer-sheet.csv')
-
-# get the CSV reader and grab the data from LatinCsvReadInFunctions class
-csv_reader = csv_read_in_functions(DATASET_PATH)
-sentence_data = csv_reader.grab_sentences_and_sentiment()
-
 class sentiment_analysis:
-    def __init__(self, sentences_data = sentence_data, model_name="distilbert/distilbert-base-uncased-finetuned-sst-2-english"):
+    def __init__(self, model_name="distilbert/distilbert-base-uncased-finetuned-sst-2-english"):
         from transformers import DistilBertForSequenceClassification, DistilBertTokenizer
-        csv_reader = csv_read_in_functions(DATASET_PATH)
-        sentences_data = csv_reader.grab_sentences_and_sentiment()
         
+        # Initialize CSV reader and get data
+        dataset_path = os.path.join(PROJECT_ROOT, 'app', 'dataset', 'hirevue-answer-sheet.csv')
+        csv_reader = csv_read_in_functions(dataset_path)
+        self.sentences_data = csv_reader.grab_sentences_and_sentiment()
+        
+        # Initialize tokenizer and model
         tokenizer = DistilBertTokenizer.from_pretrained(model_name)
         model = DistilBertForSequenceClassification.from_pretrained(model_name)
-        # use_fast here since the tokenizer.json file doesn't exist in the bert model and we need to rely on vocab.json and merges.txt
         
-        self.sentences_data = sentences_data
         self.tokenizer = tokenizer
         self.model = model
         
-        # initializes MPS and ensures the model is set to the correct device before any training starts
+        # Initialize device and move model to appropriate device
         device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
         self.model.to(device)
-
         
-        # mapping sentiment to numeric values (may need to adjust as needed later depending on results)
+        # Mapping sentiment to numeric values
         self.label2id = {"positive": 0, "negative": 1}
         self.model = DistilBertForSequenceClassification.from_pretrained(
             model_name,

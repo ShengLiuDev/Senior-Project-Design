@@ -27,7 +27,15 @@ def check_mongodb_connection():
 def create_app():
     """Create and configure the Flask application"""
     app = Flask(__name__)
-    CORS(app)  # Enable CORS for all routes
+    # Configure CORS with specific allowed origins and methods
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": ["http://localhost:3000"],  # Only allow requests from your frontend
+            "methods": ["GET", "POST", "OPTIONS"],  # Only allow specific HTTP methods
+            "allow_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True
+        }
+    })
 
     # Initialize components
     speech_detector = SpeechDetector()
