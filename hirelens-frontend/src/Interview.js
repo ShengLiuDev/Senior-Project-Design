@@ -68,7 +68,7 @@ function Interview() {
 			}
 
 			// Start recording frames
-			recordingIntervalRef.current = setInterval(recordFrame, 1000/30); // 30 FPS
+			recordingIntervalRef.current = setInterval(recordFrame, 1000/30); // 30 FPS do not change this
 
 		} catch (err) {
 			setError('Failed to start interview');
@@ -80,7 +80,14 @@ function Interview() {
 	// Record a single frame
 	const recordFrame = async () => {
 		try {
-			if (!canvasRef.current || !videoRef.current || !sessionIdRef.current) return;
+			if (!canvasRef.current || !videoRef.current || !sessionIdRef.current) {
+				console.log('Missing required refs:', {
+					canvas: !!canvasRef.current,
+					video: !!videoRef.current,
+					sessionId: !!sessionIdRef.current
+				});
+				return;
+			}
 
 			const canvas = canvasRef.current;
 			const video = videoRef.current;
@@ -93,8 +100,14 @@ function Interview() {
 			// Draw current video frame to canvas
 			context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-			// Convert to base64
+			// Convert to base64 with proper format
 			const frameData = canvas.toDataURL('image/jpeg', 0.8);
+			
+			// Validate frame data
+			if (!frameData || !frameData.startsWith('data:image/jpeg;base64,')) {
+				console.error('Invalid frame data format');
+				return;
+			}
 
 			// Send frame to backend
 			const response = await fetch('http://localhost:5000/api/interview/record', {
@@ -110,10 +123,13 @@ function Interview() {
 			});
 
 			if (!response.ok) {
-				throw new Error('Failed to record frame');
+				const errorData = await response.json();
+				console.error('Frame recording error:', errorData);
+				throw new Error(errorData.message || 'Failed to record frame');
 			}
 
-			setFrameCount(prev => prev + 1);
+			const data = await response.json();
+			console.log('Frame recorded successfully:', data);
 
 		} catch (err) {
 			console.error('Frame recording error:', err);

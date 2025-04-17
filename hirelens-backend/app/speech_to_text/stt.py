@@ -7,7 +7,7 @@ from datetime import datetime
 from RealtimeSTT import AudioToTextRecorder
 import pyaudio
 import platform
-import random
+import secrets
 
 # Add the project root to Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -15,72 +15,85 @@ sys.path.append(project_root)
 
 from app.answer_analysis.analyzer import AnswerAnalyzer
 from app.sentiment_analysis.sentiment_analysis_functions import sentiment_analysis
-from app.sentiment_analysis.csv_readin_functions import csv_read_in_functions
 
-# Import appropriate module based on OS for key detection
-if platform.system() == 'Windows':
-    import msvcrt
-else:
-    import select
-    import termios
-    import tty
-
-def ensure_recordings_dir():
-    """
-    Create .recordings directory if it doesn't exist
-    """
-    recordings_dir = os.path.join(project_root, '.recordings')
-    os.makedirs(recordings_dir, exist_ok=True)
-    return recordings_dir
-
-class SpeechDetector:
+class InterviewRecorder:
     def __init__(self):
-        # Initialize RealtimeSTT recorder with default settings
+        # Initialize RealtimeSTT recorder
         self.recorder = AudioToTextRecorder(
-            model="base",  # Use the base model for better performance
-            language="en",  # Set language to English
-            silero_sensitivity=0.6,  # Adjust sensitivity for voice detection
-            webrtc_sensitivity=3  # Adjust WebRTC sensitivity
+            model="base",
+            language="en",
+            silero_sensitivity=0.6,
+            webrtc_sensitivity=3
         )
         
-        # Audio configuration for saving WAV files
+        # Audio configuration
         self.CHUNK = 1024
         self.FORMAT = pyaudio.paInt16
         self.CHANNELS = 1
         self.RATE = 44100
         
-    def record_audio(self, filename, duration=20):
-        """
-        Record audio for specified duration using RealtimeSTT while saving WAV file
-        Can be stopped early by pressing Enter or Space
-        """
-        print(f"Recording started... You have {duration} seconds")
-        print("Press Enter or Space to stop recording early")
+        # Initialize analyzers
+        self.answer_analyzer = AnswerAnalyzer()
+        self.sentiment_analyzer = sentiment_analysis()
         
-        # Initialize PyAudio for saving WAV file
+        # Ensure recordings directory exists
+        self.recordings_dir = os.path.join(project_root, '.recordings')
+        os.makedirs(self.recordings_dir, exist_ok=True)
+
+    def record_answer(self, question, duration=90):
+        """
+        Record and analyze an answer for a given question
+        Returns transcription and analysis
+        """
+        try:
+            # Record and transcribe audio
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = os.path.join(self.recordings_dir, f"recording_{timestamp}.wav")
+            
+            print(f"\nRecording answer for question: {question}")
+            print(f"You have {duration} seconds to answer")
+            print("Press Enter or Space to stop recording early")
+            
+            # Record audio
+            text = self._record_audio(filename, duration)
+            
+            # Analyze the answer
+            analysis = self._analyze_answer(text, question)
+            
+            return {
+                'transcription': text,
+                'analysis': analysis,
+                'recording_path': filename
+            }
+            
+        except Exception as e:
+            print(f"Error recording answer: {e}")
+            return None
+
+    def _record_audio(self, filename, duration):
+        """Internal method to record audio"""
         p = pyaudio.PyAudio()
         stream = p.open(format=self.FORMAT,
                        channels=self.CHANNELS,
                        rate=self.RATE,
                        input=True,
-                       frames_per_buffer=self.CHUNK,
-                       input_device_index=None)  # Use default input device
+                       frames_per_buffer=self.CHUNK)
         
-        # Start recording with RealtimeSTT
+        # Start recording
         self.recorder.start()
         frames = []
         
-        # Start a thread to show elapsed time
+        # Start timer thread
         stop_timer = threading.Event()
-        timer_thread = threading.Thread(target=show_elapsed_time, args=(stop_timer,))
+        timer_thread = threading.Thread(target=self._show_elapsed_time, args=(stop_timer,))
         timer_thread.start()
         
-        # Start a thread to check for key press
+        # Start key press thread
         stop_recording = threading.Event()
-        key_thread = threading.Thread(target=check_for_key, args=(stop_recording,))
+        key_thread = threading.Thread(target=self._check_for_key, args=(stop_recording,))
         key_thread.start()
         
-        # Record until duration is reached or key is pressed
+        # Record until duration or key press
         start_time = time.time()
         while time.time() - start_time < duration and not stop_recording.is_set():
             try:
@@ -88,26 +101,20 @@ class SpeechDetector:
                 frames.append(data)
             except OSError as e:
                 if e.errno == -9981:  # Input overflowed
-                    print("\nBuffer overflow detected, continuing recording...")
                     continue
-                else:
-                    raise
+                raise
         
-        # Stop the timer thread
+        # Clean up threads
         stop_timer.set()
-        timer_thread.join()
-        
-        # Stop the key thread
         stop_recording.set()
+        timer_thread.join()
         key_thread.join()
         
-        # Stop recording and get the text
+        # Stop recording and get text
         self.recorder.stop()
         text = self.recorder.text()
         
-        print("\nRecording finished!")
-        
-        # Save the recorded data as a WAV file
+        # Save WAV file
         wf = wave.open(filename, 'wb')
         wf.setnchannels(self.CHANNELS)
         wf.setsampwidth(p.get_sample_size(self.FORMAT))
@@ -122,124 +129,102 @@ class SpeechDetector:
         
         return text
 
-def show_elapsed_time(stop_event):
-    """
-    Show elapsed time while recording
-    """
-    start_time = time.time()
-    while not stop_event.is_set():
-        elapsed = int(time.time() - start_time)
-        print(f"\rElapsed time: {elapsed} seconds", end="")
-        time.sleep(1)
+    def _analyze_answer(self, text, question):
+        """Internal method to analyze the answer"""
+        # Get answer analysis
+        analysis = self.answer_analyzer.analyze_answer(question, text)
+        
+        # Get sentiment analysis
+        sentiment_result = self.sentiment_analyzer.predict(text)
+        analysis['sentiment'] = sentiment_result
+        
+        # If sentiment is negative, provide positive reformulation
+        if sentiment_result == 'negative':
+            analysis['positive_reformulation'] = self.sentiment_analyzer.reformulate_positive(text)
+        
+        return analysis
 
-def check_for_key(stop_event):
-    """
-    Check for Enter or Space key press to stop recording
-    """
-    if platform.system() == 'Windows':
+    def _show_elapsed_time(self, stop_event):
+        """Show elapsed time while recording"""
+        start_time = time.time()
         while not stop_event.is_set():
-            if msvcrt.kbhit():
-                key = msvcrt.getch()
-                if key in (b'\r', b' '):  # Enter or Space
-                    stop_event.set()
-                    break
-            time.sleep(0.1)
-    else:
-        # Save terminal settings
-        old_settings = termios.tcgetattr(sys.stdin)
-        try:
-            tty.setcbreak(sys.stdin.fileno())
+            elapsed = int(time.time() - start_time)
+            print(f"\rElapsed time: {elapsed} seconds", end="")
+            time.sleep(1)
+
+    def _check_for_key(self, stop_event):
+        """Check for Enter or Space key press"""
+        if platform.system() == 'Windows':
+            import msvcrt
             while not stop_event.is_set():
-                if select.select([sys.stdin], [], [], 0.1)[0]:
-                    key = sys.stdin.read(1)
-                    if key in ('\r', ' '):  # Enter or Space
+                if msvcrt.kbhit():
+                    key = msvcrt.getch()
+                    if key in (b'\r', b' '):
                         stop_event.set()
                         break
-        finally:
-            # Restore terminal settings
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-
-def analyze_answer(text, question):
-    """
-    Analyze the transcribed answer using the AnswerAnalyzer and sentiment_analysis classes
-    """
-    # Initialize analyzers
-    answer_analyzer = AnswerAnalyzer()
-    sentiment_analyzer = sentiment_analysis()
-    
-    # Get answer analysis
-    analysis = answer_analyzer.analyze_answer(question, text)
-    
-    # Get sentiment analysis
-    sentiment_result = sentiment_analyzer.predict(text)
-    
-    # Add sentiment information to the analysis
-    analysis['sentiment'] = sentiment_result
-    
-    # If sentiment is negative, provide a positive reformulation
-    if sentiment_result == 'negative':
-        analysis['positive_reformulation'] = sentiment_analyzer.reformulate_positive(text)
-    
-    return analysis
+                time.sleep(0.1)
+        else:
+            import select
+            import termios
+            import tty
+            
+            old_settings = termios.tcgetattr(sys.stdin)
+            try:
+                tty.setcbreak(sys.stdin.fileno())
+                while not stop_event.is_set():
+                    if select.select([sys.stdin], [], [], 0.1)[0]:
+                        key = sys.stdin.read(1)
+                        if key in ('\r', ' '):
+                            stop_event.set()
+                            break
+            finally:
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
 def get_random_questions(num_questions=3):
-    """Get a list of random interview questions from the dataset"""
+    """Get random interview questions"""
     try:
-        # Initialize the AnswerAnalyzer
         analyzer = AnswerAnalyzer()
-        
-        # Get questions from the dataset
-        questions = analyzer.get_random_questions(num_questions)
-        
-        return questions
+        return analyzer.get_random_questions(num_questions)
     except Exception as e:
-        print(f"Error getting random questions: {e}")
+        print(f"Error getting questions: {e}")
         return []
 
 def main():
-    print("Speech-to-Text Analysis Program")
-    print("You will be prompted to record answers to interview questions.")
-    print("You will have 3 attempts for each question.")
+    """Main function to run the interview recorder"""
+    print("\n=== Interview Recording System ===")
     
-    # Ensure recordings directory exists
-    recordings_dir = ensure_recordings_dir()
+    # Get random questions
+    questions = get_random_questions(3)
+    if not questions:
+        print("Error: Could not get questions")
+        return
     
-    # Initialize analyzer and get random questions
-    analyzer = AnswerAnalyzer()
-    questions = analyzer.get_random_questions(num_questions=3)
+    # Initialize recorder
+    recorder = InterviewRecorder()
     
-    # Initialize speech detector
-    detector = SpeechDetector()
-    
+    # Process each question
     for i, question in enumerate(questions):
         print(f"\nQuestion {i+1} of {len(questions)}")
         print(f"Question: {question}")
         
-        # Allow 3 attempts per question
+        # Allow 3 attempts
         for attempt in range(3):
             print(f"\nAttempt {attempt + 1} of 3")
             input("Press Enter to start recording...")
             
-            # Record and transcribe audio
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(recordings_dir, f"recording_{i+1}_attempt_{attempt+1}_{timestamp}.wav")
-            print("\nRecording and transcribing...")
-            text = detector.record_audio(filename, duration=20)
+            # Record and analyze
+            result = recorder.record_answer(question)
             
-            print("\nTranscription:")
-            print(text)
-            
-            # Analyze the answer
-            print("\nAnalyzing answer...")
-            analysis = analyze_answer(text, question)
-            
-            print("\nAnalysis Results:")
-            for key, value in analysis.items():
-                print(f"{key}: {value}\n")
-            print("-" * 50)
+            if result:
+                print("\nTranscription:")
+                print(result['transcription'])
+                print("\nAnalysis:")
+                for key, value in result['analysis'].items():
+                    print(f"{key}: {value}")
+                print("-" * 50)
             
             # Ask if user wants to try again
-            if attempt < 2:  # Don't ask on the last attempt
+            if attempt < 2:
                 retry = input("Would you like to try again? (y/n): ").lower()
                 if retry != 'y':
                     break

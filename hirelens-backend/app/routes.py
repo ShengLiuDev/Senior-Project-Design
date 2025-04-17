@@ -14,6 +14,19 @@ from .facial_recognition.expression_analyzer import ExpressionAnalyzer
 from datetime import datetime
 from pymongo import MongoClient
 
+import os
+import sys
+import threading
+import wave
+from RealtimeSTT import AudioToTextRecorder
+import pyaudio
+from app.answer_analysis.analyzer import AnswerAnalyzer
+from app.sentiment_analysis.sentiment_analysis_functions import sentiment_analysis
+
+# Add the project root to Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(project_root)
+
 routes = Blueprint('routes', __name__)
 CORS(routes)  # Enable CORS for all routes
 
@@ -158,51 +171,129 @@ def start_interview():
 @jwt_required()
 def record_frame():
     """Record a frame during the interview"""
-    current_user = get_jwt_identity()
-    session_id = request.json.get('session_id')
-    frame_data = request.json.get('frame')
-    
-    if not session_id or not frame_data:
-        return jsonify({
-            "status": "error",
-            "message": "Session ID and frame data are required"
-        }), 400
-    
-    session = interview_sessions.get(session_id)
-    if not session:
-        return jsonify({
-            "status": "error",
-            "message": "Session not found"
-        }), 404
-    
-    # Verify user owns this session
-    if getattr(session, 'user_id', None) != current_user:
-        return jsonify({
-            "status": "error",
-            "message": "Unauthorized access to session"
-        }), 403
-        
     try:
-        # Convert base64 frame to numpy array
-        frame_data = frame_data.split(',')[1]  # Remove data URL prefix
-        frame_bytes = base64.b64decode(frame_data)
-        frame_array = np.frombuffer(frame_bytes, dtype=np.uint8)
-        frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+        # Get JSON payload with force=True to handle malformed JSON
+        payload = request.get_json(force=True)
+        if not payload:
+            return jsonify({
+                "status": "error",
+                "message": "Invalid JSON payload",
+                "details": "No payload received"
+            }), 400
+
+        current_user = get_jwt_identity()
+        session_id = payload.get('session_id')
+        frame_data = payload.get('frame')
         
-        # Store frame
-        session.add_frame(frame)
+        # Validate required fields
+        if not session_id:
+            return jsonify({
+                "status": "error",
+                "message": "Session ID is required",
+                "details": "session_id field is missing"
+            }), 400
+            
+        if not frame_data:
+            return jsonify({
+                "status": "error",
+                "message": "Frame data is required",
+                "details": "frame field is missing"
+            }), 400
         
-        return jsonify({
-            "status": "success",
-            "message": "Frame recorded successfully",
-            "frames_recorded": len(session.frames)
-        })
+        # Get session
+        session = interview_sessions.get(session_id)
+        if not session:
+            return jsonify({
+                "status": "error",
+                "message": "Session not found",
+                "details": f"Session {session_id} does not exist"
+            }), 404
         
+        # Verify user owns this session
+        if getattr(session, 'user_id', None) != current_user:
+            return jsonify({
+                "status": "error",
+                "message": "Unauthorized access to session",
+                "details": "User does not own this session"
+            }), 403
+            
+        try:
+            # Validate frame data format
+            if not isinstance(frame_data, str):
+                return jsonify({
+                    "status": "error",
+                    "message": "Invalid frame data format",
+                    "details": "Frame data must be a string"
+                }), 400
+
+            if not frame_data.startswith('data:image/jpeg;base64,'):
+                return jsonify({
+                    "status": "error",
+                    "message": "Invalid frame data format",
+                    "details": "Frame data must be a base64 encoded JPEG image"
+                }), 400
+
+            # Remove data URL prefix and decode base64
+            try:
+                frame_data = frame_data.split(',')[1]
+                frame_bytes = base64.b64decode(frame_data)
+            except Exception as e:
+                return jsonify({
+                    "status": "error",
+                    "message": "Invalid base64 data",
+                    "details": str(e)
+                }), 400
+            
+            # Convert to numpy array and decode image
+            try:
+                frame_array = np.frombuffer(frame_bytes, dtype=np.uint8)
+                frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+            except Exception as e:
+                return jsonify({
+                    "status": "error",
+                    "message": "Failed to decode frame",
+                    "details": str(e)
+                }), 400
+            
+            if frame is None:
+                return jsonify({
+                    "status": "error",
+                    "message": "Failed to decode frame",
+                    "details": "OpenCV failed to decode the image"
+                }), 400
+            
+            # Validate frame dimensions
+            if frame.shape[0] == 0 or frame.shape[1] == 0:
+                return jsonify({
+                    "status": "error",
+                    "message": "Invalid frame dimensions",
+                    "details": f"Frame dimensions: {frame.shape}"
+                }), 400
+            
+            # Store frame
+            session.add_frame(frame)
+            
+            return jsonify({
+                "status": "success",
+                "message": "Frame recorded successfully",
+                "frames_recorded": len(session.frames),
+                "frame_dimensions": frame.shape
+            })
+            
+        except Exception as e:
+            print(f"Error processing frame: {str(e)}")
+            return jsonify({
+                "status": "error",
+                "message": "Error processing frame",
+                "details": str(e)
+            }), 500
+            
     except Exception as e:
-        print(f"Error in record_frame: {str(e)}")
+        print(f"Error in record_frame route: {str(e)}")
         return jsonify({
             "status": "error",
-            "message": f"Error recording frame: {str(e)}"
+            "message": "Server error",
+            "details": str(e)
         }), 500
 
 @routes.route('/api/interview/stop', methods=['POST'])
