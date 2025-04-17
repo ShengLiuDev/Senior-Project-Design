@@ -3,7 +3,7 @@ import sys
 import json
 import requests
 import pandas as pd
-import random
+import secrets  # Import secrets module for secure random operations
 from config import OPENROUTER_API_KEY, OPENROUTER_API_URL, OPENROUTER_MODEL
 from typing import Dict, List, Any
 
@@ -38,25 +38,26 @@ class AnswerAnalyzer:
         first_words = {}
         selected_questions = []
         
-        # Shuffle the questions to ensure randomness
-        random.shuffle(all_questions)
+        # Using Fisher-Yates shuffle with secrets module for secure randomization
+        questions = all_questions.copy()
+        for i in range(len(questions) - 1, 0, -1):
+            # Use secrets.randbelow for secure random index selection
+            j = secrets.randbelow(i + 1)
+            questions[i], questions[j] = questions[j], questions[i]
         
-        for question in all_questions:
-            # Get the first word of the question
-            first_word = question.split()[0].lower()
-            
-            # If we haven't seen this first word before and we haven't selected enough questions
-            if first_word not in first_words and len(selected_questions) < num_questions:
-                selected_questions.append(question)
-                first_words[first_word] = True
-                
-            # If we've selected enough questions, break the loop
+        # Select questions ensuring no two start with the same word
+        for question in questions:
             if len(selected_questions) >= num_questions:
                 break
+                
+            first_word = question.split()[0].lower()
+            if first_word not in first_words:
+                selected_questions.append(question)
+                first_words[first_word] = True
         
         # If we couldn't find enough unique questions, add remaining questions
         if len(selected_questions) < num_questions:
-            remaining_questions = [q for q in all_questions if q not in selected_questions]
+            remaining_questions = [q for q in questions if q not in selected_questions]
             selected_questions.extend(remaining_questions[:num_questions - len(selected_questions)])
         
         return selected_questions
