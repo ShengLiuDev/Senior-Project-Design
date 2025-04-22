@@ -615,7 +615,11 @@ function Interview() {
 								overall_score: data.final_scores?.overall_score || 0,
 								attempt: currentAttempt,
 								transcript: transcriptResult,
-								answer_analysis: data.answer_analysis || {}
+								answer_analysis: {
+									...data.answer_analysis,
+									analysis: data.answer_analysis?.analysis || {},
+									positive_reformulation: data.answer_analysis?.positive_reformulation || null
+								}
 							};
 							
 							// Update question results
@@ -977,6 +981,21 @@ function Interview() {
 										{bestAttempt ? (
 											<div className="best-attempt">
 												<p>Best Score: {bestAttempt.overall_score.toFixed(1)}% (Attempt {bestAttempt.attempt})</p>
+												
+												{/* Show transcript */}
+												<div className="transcript-section">
+													<h4>Your Answer:</h4>
+													<p className="transcript">{bestAttempt.transcript}</p>
+												</div>
+												
+												{/* Show positive reformulation if available */}
+												{bestAttempt.answer_analysis && bestAttempt.answer_analysis.positive_reformulation && (
+													<div className="reformulation-section">
+														<h4>Improved Version:</h4>
+														<p className="reformulation">{bestAttempt.answer_analysis.positive_reformulation}</p>
+													</div>
+												)}
+												
 												{bestAttempt.answer_analysis && bestAttempt.answer_analysis.analysis && (
 													<div className="feedback-section">
 														<h4>Feedback:</h4>
@@ -996,6 +1015,18 @@ function Interview() {
 																))}
 															</ul>
 														</div>
+														
+														{/* Add suggestions section if available */}
+														{bestAttempt.answer_analysis.analysis.suggestions && bestAttempt.answer_analysis.analysis.suggestions.length > 0 && (
+															<div className="feedback-item">
+																<h5>Suggestions:</h5>
+																<ul>
+																	{bestAttempt.answer_analysis.analysis.suggestions.map((suggestion, i) => (
+																		<li key={i}>{suggestion}</li>
+																	))}
+																</ul>
+															</div>
+														)}
 													</div>
 												)}
 											</div>

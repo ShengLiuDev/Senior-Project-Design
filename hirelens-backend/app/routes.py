@@ -1473,7 +1473,9 @@ def analyze_transcript():
         # Simple positive reformulation message
         positive_reformulation = None
         if sentiment_result == 'negative':
-            positive_reformulation = "Consider rephrasing your answer to highlight the positive aspects and use more confident language."
+            positive_reformulation = "Consider rephrasing your answer to emphasize your strengths and achievements, and use more confident language."
+        elif sentiment_result == 'neutral':
+            positive_reformulation = "Your answer was good. To make it even better, try adding more specific examples and use more positive language to highlight your strengths."
         
         # Store in session without using complicated analysis
         if session_id and session_id in interview_sessions:

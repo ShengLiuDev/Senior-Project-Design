@@ -940,8 +940,12 @@
 
 /* Feedback sections in results */
 .feedback-section {
-    margin-top: 1rem;
-    text-align: left;
+    margin-top: 20px;
+    padding: 15px;
+    border-radius: 8px;
+    background-color: #fff;
+    border: 1px solid #dee2e6;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
 .feedback-section h4 {
@@ -951,25 +955,37 @@
 }
 
 .feedback-item {
-    margin-bottom: 1rem;
+    margin-bottom: 15px;
 }
 
 .feedback-item h5 {
-    color: #202124;
-    margin-bottom: 0.5rem;
-    font-size: 0.9rem;
+    color: #343a40;
+    font-size: 1rem;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #e9ecef;
+    padding-bottom: 5px;
 }
 
 .feedback-item ul {
-    padding-left: 1.5rem;
-    margin: 0;
+    padding-left: 20px;
+    margin-bottom: 0;
 }
 
 .feedback-item li {
-    font-size: 0.9rem;
-    line-height: 1.4;
-    margin-bottom: 0.5rem;
-    color: #5f6368;
+    margin-bottom: 5px;
+    line-height: 1.5;
+}
+
+.feedback-item:nth-child(1) h5 {
+    color: #28a745;
+}
+
+.feedback-item:nth-child(2) h5 {
+    color: #fd7e14;
+}
+
+.feedback-item:nth-child(3) h5 {
+    color: #17a2b8;
 }
 
 /* Remove unused styles 
@@ -1109,4 +1125,37 @@
     overflow-y: auto;
     font-style: italic;
     color: #6c757d;
+}
+
+/* Add CSS for transcript and reformulation sections */
+.transcript-section, .reformulation-section {
+  margin: 15px 0;
+  padding: 15px;
+  border-radius: 8px;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+}
+
+.transcript-section h4, .reformulation-section h4 {
+  color: #495057;
+  margin-top: 0;
+  font-size: 1rem;
+  margin-bottom: 10px;
+}
+
+.transcript, .reformulation {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: #212529;
+}
+
+.reformulation-section {
+  background-color: #e8f5e9;
+  border-color: #c8e6c9;
+}
+
+.reformulation {
+  font-style: italic;
+  color: #2e7d32;
 }
