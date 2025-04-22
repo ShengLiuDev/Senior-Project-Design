@@ -55,11 +55,30 @@ class InterviewSession:
         self.start_time = datetime.utcnow()
         self.email = ""
         self.name = ""
+        self.current_question = None
+        self.questions_asked = []  # Store all questions asked during the session
+        self.answers = {}  # Store answers for each question
+        
+        # Initialize analyzers
+        self.answer_analyzer = AnswerAnalyzer()
+        self.sentiment_analyzer = sentiment_analysis()
 
     def add_frame(self, frame):
         """Add a frame to the session"""
         self.frames.append(frame)
         self.last_update = time.time()
+        
+    def add_question(self, question):
+        """Add a question to the session history"""
+        if question and question not in self.questions_asked:
+            self.questions_asked.append(question)
+            self.current_question = question
+            self.answers[question] = {
+                "audio_transcript": "",
+                "analysis": None,
+                "sentiment": None,
+                "start_time": datetime.utcnow()
+            }
 
     def process_interview(self):
         """Process all frames and return final scores"""
@@ -69,7 +88,9 @@ class InterviewSession:
                 "smile_percentage": 0.0,
                 "eye_contact_score": 0.0,
                 "overall_score": 0.0,
-                "total_frames": 0
+                "total_frames": 0,
+                "answer_quality_score": 0.0,
+                "overall_sentiment": 0.0
             }
             
         # Initialize analyzers
@@ -100,20 +121,34 @@ class InterviewSession:
                 smile_percentage = float(smile_time.split(":")[1].strip().rstrip('%'))
             except:
                 smile_percentage = 0.0
+                
+        # Process answers
+        answer_scores = []
+        sentiment_scores = []
+        
+        # Mock answer quality score for now - you can implement this based on actual answers
+        # when you integrate speech-to-text
+        answer_quality_score = 70.0  # Default dummy value
+        overall_sentiment = 60.0  # Default dummy value
 
         # Calculate overall score
         overall_score = (
-            (posture_report['posture_score'] * 0.4) +
-            (smile_percentage * 0.3) +
-            (eye_report['eye_contact_score'] * 0.3)
+            (posture_report['posture_score'] * 0.3) +
+            (smile_percentage * 0.2) +
+            (eye_report['eye_contact_score'] * 0.2) +
+            (answer_quality_score * 0.2) +
+            (overall_sentiment * 0.1)
         )
 
         return {
             "posture_score": round(posture_report['posture_score'], 1),
             "smile_percentage": round(smile_percentage, 1),
             "eye_contact_score": round(eye_report['eye_contact_score'], 1),
+            "answer_quality_score": round(answer_quality_score, 1),
+            "overall_sentiment": round(overall_sentiment, 1),
             "overall_score": round(overall_score, 1),
-            "total_frames": len(self.frames)
+            "total_frames": len(self.frames),
+            "questions_asked": self.questions_asked
         }
 
 @routes.route('/', methods=['GET'])
@@ -134,6 +169,7 @@ def start_interview():
     """Start a new interview session"""
     current_user = get_jwt_identity()
     session_id = request.json.get('session_id')
+    current_question = request.json.get('question')
     
     if not session_id:
         return jsonify({
@@ -152,12 +188,18 @@ def start_interview():
         session = InterviewSession(session_id)
         session.user_id = current_user
         session.running = True
+        
+        # Add the question if provided
+        if current_question:
+            session.add_question(current_question)
+        
         interview_sessions[session_id] = session
         
         return jsonify({
             "status": "success",
             "message": "Interview session started",
-            "session_id": session_id
+            "session_id": session_id,
+            "current_question": current_question
         })
         
     except Exception as e:
@@ -184,6 +226,7 @@ def record_frame():
         current_user = get_jwt_identity()
         session_id = payload.get('session_id')
         frame_data = payload.get('frame')
+        current_question = payload.get('question')
         
         # Validate required fields
         if not session_id:
@@ -218,6 +261,10 @@ def record_frame():
             }), 403
             
         try:
+            # Update current question if it has changed
+            if current_question and current_question != getattr(session, 'current_question', None):
+                session.add_question(current_question)
+            
             # Validate frame data format
             if not isinstance(frame_data, str):
                 return jsonify({
@@ -277,7 +324,9 @@ def record_frame():
                 "status": "success",
                 "message": "Frame recorded successfully",
                 "frames_recorded": len(session.frames),
-                "frame_dimensions": frame.shape
+                "frame_dimensions": frame.shape,
+                "current_question": session.current_question,
+                "questions_asked": session.questions_asked
             })
             
         except Exception as e:
@@ -337,6 +386,8 @@ def stop_interview():
                     "smile_percentage": 0.0,
                     "eye_contact_score": 0.0,
                     "overall_score": 0.0,
+                    "answer_quality_score": 0.0,
+                    "overall_sentiment": 0.0,
                     "total_frames": 0
                 }
             })
@@ -360,7 +411,8 @@ def stop_interview():
             "name": user_name,
             "date": datetime.utcnow(),
             "duration": duration,
-            "scores": final_scores
+            "scores": final_scores,
+            "questions": session.questions_asked
         }
         
         result = interviews.insert_one(interview_result)
@@ -372,7 +424,8 @@ def stop_interview():
             "status": "success",
             "message": "Interview results saved successfully",
             "interview_id": str(result.inserted_id),
-            "final_scores": final_scores
+            "final_scores": final_scores,
+            "questions_asked": session.questions_asked
         })
         
     except Exception as e:
@@ -554,6 +607,35 @@ def get_all_results():
         print(f"Error retrieving results: {str(e)}")
         return jsonify({'error': 'Failed to retrieve results'}), 500
 
+@routes.route('/api/interview/questions', methods=['GET'])
+@jwt_required()
+def get_interview_questions():
+    """Get random interview questions"""
+    try:
+        # Get query parameter for number of questions (default: 3)
+        num_questions = request.args.get('count', 3, type=int)
+        
+        # Import the function from analyzer
+        from app.answer_analysis.analyzer import AnswerAnalyzer
+        
+        # Get random questions
+        analyzer = AnswerAnalyzer()
+        questions = analyzer.get_random_questions(num_questions)
+        
+        print(f"Generated {len(questions)} random questions: {questions}")
+        
+        return jsonify({
+            "status": "success",
+            "questions": questions
+        })
+        
+    except Exception as e:
+        print(f"Error getting questions: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error getting questions: {str(e)}"
+        }), 500
+
 # Cleanup inactive sessions periodically
 def cleanup_inactive_sessions():
     """Remove sessions that haven't been updated in 5 minutes"""
@@ -563,5 +645,4 @@ def cleanup_inactive_sessions():
         if current_time - session.last_update > 300  # 5 minutes
     ]
     for session_id in inactive_sessions:
-        del interview_sessions[session_id]
-
+        del interview_sessions[session_id] 

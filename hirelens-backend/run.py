@@ -35,7 +35,12 @@ def main():
     # Create and run Flask app
     app = create_app()
     print("\n=== Starting Flask Server ===")
-    app.run(debug=True)
+    try:
+        app.run(host='0.0.0.0', port=5000, debug=True)
+    except Exception as e:
+        print(f"\n❌ Error starting Flask server: {str(e)}")
+        print("Please check if port 5000 is already in use")
+        print("You can try running: lsof -i :5000 to check what's using the port")
 
 if __name__ == '__main__':
     main()

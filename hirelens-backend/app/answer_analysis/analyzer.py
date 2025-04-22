@@ -107,9 +107,12 @@ class AnswerAnalyzer:
         5. Key competencies demonstrated
         
         NOTE: if a users answer encompasses a majority of a good answer they should
-        be scoring higher than a 6.0 to 7.0, hovering around 8.0 to 9.0. However, if the user
+        be scoring higher than a 6.0(60.0%) to 7.0(70.0%), hovering around 8.0(80.0%) to 9.0(90.0%). However, if the user
         provides a response that is not very relevant to the question, they should
-        score lower than a 4.0.
+        score lower than a 4.0(40.0%).
+        
+        Also when you give them a score, make sure you give them a percentage score that is like 87.4% for example. You can nitpick
+        and say that the user could have done better and deduct say 1.4%, but the score should be a percentage score.
         
         Additional Note: If a user's answer is in STAR format, give additional points for the STAR format. 
         Else deduct points for not using the STAR format.
