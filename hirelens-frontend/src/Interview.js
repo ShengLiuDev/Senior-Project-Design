@@ -14,12 +14,17 @@ function Interview() {
 	const [currentAttempt, setCurrentAttempt] = useState(1); // Track current attempt (1-3)
 	const [questionResults, setQuestionResults] = useState({}); // Store results for each question
 	const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
+	const [isProcessingAnswer, setIsProcessingAnswer] = useState(false); // Processing state
+	const [currentTranscript, setCurrentTranscript] = useState(''); // Store the current transcript
+	const [timeRemaining, setTimeRemaining] = useState(90); // 90 seconds timer
 	
 	const videoRef = useRef(null);
 	const canvasRef = useRef(null);
 	const streamRef = useRef(null);
 	const sessionIdRef = useRef(null);
 	const recordingIntervalRef = useRef(null);
+	const audioRecordingRef = useRef(false); // Track if audio recording is active
+	const timerIntervalRef = useRef(null); // Track timer interval
 
 	// Initialize camera when component mounts
 	useEffect(() => {
@@ -31,6 +36,9 @@ function Interview() {
 			if (recordingIntervalRef.current) {
 				clearInterval(recordingIntervalRef.current);
 			}
+			if (timerIntervalRef.current) {
+				clearInterval(timerIntervalRef.current);
+			}
 			if (streamRef.current) {
 				streamRef.current.getTracks().forEach(track => track.stop());
 			}
@@ -38,6 +46,49 @@ function Interview() {
 		};
 	}, []);
 
+	// Timer related functions
+	const startTimer = () => {
+		// Reset timer to 90 seconds
+		setTimeRemaining(90);
+		
+		// Clear any existing timer
+		if (timerIntervalRef.current) {
+			clearInterval(timerIntervalRef.current);
+		}
+		
+		// Start a new timer
+		timerIntervalRef.current = setInterval(() => {
+			setTimeRemaining(prevTime => {
+				if (prevTime <= 1) {
+					// Stop timer and recording when time is up
+					clearInterval(timerIntervalRef.current);
+					stopRecording();
+					return 0;
+				}
+				return prevTime - 1;
+			});
+		}, 1000);
+	};
+	
+	const stopTimer = () => {
+		if (timerIntervalRef.current) {
+			clearInterval(timerIntervalRef.current);
+			timerIntervalRef.current = null;
+		}
+	};
+	
+	// Calculate timer progress percentage
+	const getTimerProgress = () => {
+		return (timeRemaining / 90) * 100;
+	};
+	
+	// Determine timer color based on remaining time
+	const getTimerColor = () => {
+		if (timeRemaining <= 10) return '#dc3545'; // Red when 10 seconds or less
+		if (timeRemaining <= 30) return '#ffc107'; // Yellow when 30 seconds or less
+		return '#0d6efd'; // Default blue
+	};
+	
 	// Fetch random questions
 	const fetchQuestions = async () => {
 		try {
@@ -106,6 +157,7 @@ function Interview() {
 			setStatus('recording');
 			setError(null);
 			setFrameCount(0);
+			setCurrentTranscript(''); // Clear current transcript
 
 			// Start camera if not already running
 			if (!streamRef.current) {
@@ -116,6 +168,7 @@ function Interview() {
 			const sessionId = `session_${Date.now()}`;
 			sessionIdRef.current = sessionId;
 
+			// Start session with current question
 			const response = await fetch('http://localhost:5000/api/interview/start', {
 				method: 'POST',
 				headers: {
@@ -134,6 +187,28 @@ function Interview() {
 
 			// Start recording frames
 			recordingIntervalRef.current = setInterval(recordFrame, 1000/10); // 10 FPS
+			
+			// Start audio recording via backend
+			const audioResponse = await fetch('http://localhost:5000/api/interview/start-audio', {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`,
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					session_id: sessionId,
+					question: questions[currentQuestionIndex]
+				})
+			});
+			
+			if (!audioResponse.ok) {
+				console.error('Failed to start audio recording');
+			} else {
+				audioRecordingRef.current = true;
+			}
+			
+			// Start the timer
+			startTimer();
 
 		} catch (err) {
 			setError('Failed to start interview');
@@ -158,7 +233,7 @@ function Interview() {
 		if (currentQuestionIndex < questions.length - 1) {
 			setCurrentQuestionIndex(currentQuestionIndex + 1);
 			setCurrentAttempt(1);
-			startInterview();
+			setStatus('ready');
 		} else {
 			// All questions answered, end interview
 			completeInterview();
@@ -228,6 +303,12 @@ function Interview() {
 	// Stop recording for current attempt
 	const stopRecording = async () => {
 		try {
+			// Stop the timer
+			stopTimer();
+			
+			// Set processing state first
+			setIsProcessingAnswer(true);
+			
 			// Clear recording interval
 			if (recordingIntervalRef.current) {
 				clearInterval(recordingIntervalRef.current);
@@ -236,13 +317,47 @@ function Interview() {
 
 			// Stop interview on backend
 			if (sessionIdRef.current) {
+				let transcriptResult = '';
+				
+				// Stop audio recording if it was started
+				if (audioRecordingRef.current) {
+					try {
+						const audioResponse = await fetch('http://localhost:5000/api/interview/stop-audio', {
+							method: 'POST',
+							headers: {
+								'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`,
+								'Content-Type': 'application/json'
+							},
+							body: JSON.stringify({
+								session_id: sessionIdRef.current,
+								question: questions[currentQuestionIndex]
+							})
+						});
+						
+						if (audioResponse.ok) {
+							const audioData = await audioResponse.json();
+							transcriptResult = audioData.transcript || '';
+							setCurrentTranscript(transcriptResult);
+							console.log('Audio recording stopped. Transcript:', transcriptResult);
+						}
+					} catch (audioErr) {
+						console.error('Error stopping audio recording:', audioErr);
+					}
+					
+					audioRecordingRef.current = false;
+				}
+				
+				// Stop the video recording and send the transcript
 				const response = await fetch('http://localhost:5000/api/interview/stop', {
 					method: 'POST',
 					headers: {
 						'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`,
 						'Content-Type': 'application/json'
 					},
-					body: JSON.stringify({ session_id: sessionIdRef.current })
+					body: JSON.stringify({ 
+						session_id: sessionIdRef.current,
+						transcript: transcriptResult // Send the transcript from backend
+					})
 				});
 
 				if (!response.ok) {
@@ -261,7 +376,9 @@ function Interview() {
 					answer_quality_score: data.final_scores?.answer_quality_score || 0,
 					overall_sentiment: data.final_scores?.overall_sentiment || 0,
 					overall_score: data.final_scores?.overall_score || 0,
-					attempt: currentAttempt
+					attempt: currentAttempt,
+					transcript: transcriptResult,
+					answer_analysis: data.answer_analysis || {}
 				};
 				
 				// Update question results
@@ -283,10 +400,12 @@ function Interview() {
 				});
 				
 				// Set status after recording stops
+				setIsProcessingAnswer(false);
 				setStatus('attempt_completed');
 				sessionIdRef.current = null;
 			}
 		} catch (err) {
+			setIsProcessingAnswer(false);
 			setError('Failed to stop recording');
 			console.error('Stop recording error:', err);
 			setStatus('ready');
@@ -359,6 +478,13 @@ function Interview() {
 			<div className="interview-container">
 				{!results ? (
 					<>
+						{questions.length > 0 && (
+							<div className="question-display">
+								<h2>Question {currentQuestionIndex + 1} of {questions.length} (Attempt {currentAttempt} of 3)</h2>
+								<p>{questions[currentQuestionIndex]}</p>
+							</div>
+						)}
+						
 						{(status === 'initializing' || status === 'ready' || status === 'recording' || status === 'attempt_completed') && (
 							<div className="video-container">
 								<video 
@@ -377,14 +503,36 @@ function Interview() {
 										<div className="spinner"></div>
 									</div>
 								)}
+								{isProcessingAnswer && (
+									<div className="processing-overlay">
+										<div className="spinner"></div>
+										<p>Please wait while we process your answer...</p>
+									</div>
+								)}
 							</div>
 						)}
-
-						{questions.length > 0 && (
-							<div className="question-display">
-								<h2>Question {currentQuestionIndex + 1} of {questions.length} (Attempt {currentAttempt} of 3)</h2>
-								<p>{questions[currentQuestionIndex]}</p>
-							</div>
+						
+						{status === 'recording' && (
+							<>
+								<div className="recording-instructions">
+									<h3>Recording in progress</h3>
+									<p>Click "Stop Recording" when you're done.</p>
+								</div>
+								
+								<div className="timer-container">
+									<div className="timer-label">Time remaining: {timeRemaining}s</div>
+									<div className="timer-bar-container">
+										<div 
+											className="timer-bar" 
+											style={{ 
+												width: `${getTimerProgress()}%`,
+												backgroundColor: getTimerColor(),
+												boxShadow: `0 0 5px ${getTimerColor()}`
+											}}
+										></div>
+									</div>
+								</div>
+							</>
 						)}
 
 						<div className="controls">
@@ -530,6 +678,27 @@ function Interview() {
 										{bestAttempt ? (
 											<div className="best-attempt">
 												<p>Best Score: {bestAttempt.overall_score.toFixed(1)}% (Attempt {bestAttempt.attempt})</p>
+												{bestAttempt.answer_analysis && bestAttempt.answer_analysis.analysis && (
+													<div className="feedback-section">
+														<h4>Feedback:</h4>
+														<div className="feedback-item">
+															<h5>Strengths:</h5>
+															<ul>
+																{bestAttempt.answer_analysis.analysis.strengths?.map((strength, i) => (
+																	<li key={i}>{strength}</li>
+																))}
+															</ul>
+														</div>
+														<div className="feedback-item">
+															<h5>Areas for Improvement:</h5>
+															<ul>
+																{bestAttempt.answer_analysis.analysis.improvements?.map((improvement, i) => (
+																	<li key={i}>{improvement}</li>
+																))}
+															</ul>
+														</div>
+													</div>
+												)}
 											</div>
 										) : (
 											<p className="no-data">No data recorded</p>
