@@ -484,6 +484,19 @@ function Interview() {
 								<p>{questions[currentQuestionIndex]}</p>
 							</div>
 						)}
+						<div className="timer-container">
+									<div className="timer-label">Time remaining: {timeRemaining}s</div>
+									<div className="timer-bar-container">
+										<div 
+											className="timer-bar" 
+											style={{ 
+												width: `${getTimerProgress()}%`,
+												backgroundColor: getTimerColor(),
+												boxShadow: `0 0 5px ${getTimerColor()}`
+											}}
+										></div>
+							</div>
+						</div>
 						
 						{(status === 'initializing' || status === 'ready' || status === 'recording' || status === 'attempt_completed') && (
 							<div className="video-container">
@@ -514,24 +527,10 @@ function Interview() {
 						
 						{status === 'recording' && (
 							<>
-								<div className="recording-instructions">
+								{/* <div className="recording-instructions">
 									<h3>Recording in progress</h3>
 									<p>Click "Stop Recording" when you're done.</p>
-								</div>
-								
-								<div className="timer-container">
-									<div className="timer-label">Time remaining: {timeRemaining}s</div>
-									<div className="timer-bar-container">
-										<div 
-											className="timer-bar" 
-											style={{ 
-												width: `${getTimerProgress()}%`,
-												backgroundColor: getTimerColor(),
-												boxShadow: `0 0 5px ${getTimerColor()}`
-											}}
-										></div>
-									</div>
-								</div>
+								</div> */}
 							</>
 						)}
 
