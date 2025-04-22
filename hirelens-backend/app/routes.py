@@ -1200,6 +1200,7 @@ def test_audio():
         }), 500
 
 @routes.route('/api/interview/process-audio', methods=['POST'])
+# @jwt_required()  # Temporarily disabled for testing
 def process_audio():
     """
     Endpoint to process audio recording from interview
@@ -1257,8 +1258,15 @@ def process_audio():
             return jsonify({"error": "No audio file or data provided"}), 400
             
         # Import the STT recorder
-        from app.speech_to_text.stt import InterviewRecorder
-        interview_recorder = InterviewRecorder()
+        try:
+            from app.speech_to_text.stt import InterviewRecorder
+            interview_recorder = InterviewRecorder()
+            print("Successfully initialized InterviewRecorder")
+        except Exception as import_error:
+            print(f"Error importing or initializing InterviewRecorder: {import_error}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": f"Failed to initialize audio transcription: {str(import_error)}"}), 500
         
         # Verify the file exists and is not empty
         if not os.path.exists(filepath):
@@ -1302,15 +1310,42 @@ def process_audio():
         sentiment = "neutral"
         if transcription and not transcription.startswith('['):
             try:
-                # Import sentiment analyzer
-                from app.speech_to_text.sentiment_analysis import SentimentAnalyzer
-                sentiment_analyzer = SentimentAnalyzer()
-                
-                # Analyze sentiment
-                sentiment = sentiment_analyzer.analyze_sentiment(transcription)
-                print(f"Sentiment: {sentiment}")
+                # Import sentiment analyzer with explicit safety check
+                try:
+                    from app.speech_to_text.sentiment_analysis import SentimentAnalyzer
+                    sentiment_analyzer = SentimentAnalyzer()
+                    
+                    # Analyze sentiment with a timeout to prevent hangs
+                    import signal
+                    
+                    class TimeoutError(Exception):
+                        pass
+                    
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError("Sentiment analysis timed out")
+                    
+                    # Set timeout for sentiment analysis (3 seconds)
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(3)
+                    
+                    try:
+                        # Analyze sentiment
+                        sentiment = sentiment_analyzer.analyze_sentiment(transcription)
+                        print(f"Sentiment: {sentiment}")
+                    except TimeoutError as te:
+                        print(f"Sentiment analysis timed out: {te}")
+                        sentiment = "neutral"
+                    finally:
+                        # Cancel the alarm
+                        signal.alarm(0)
+                        
+                except ImportError as ie:
+                    print(f"Could not import SentimentAnalyzer: {ie}")
+                    sentiment = "neutral"
             except Exception as sentiment_error:
                 print(f"Error analyzing sentiment: {sentiment_error}")
+                import traceback
+                traceback.print_exc()
                 sentiment = "neutral"
         
         print("===== Audio Processing Complete =====\n")
@@ -1323,7 +1358,13 @@ def process_audio():
         print(f"Error processing audio: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": "Failed to process audio", "details": str(e)}), 500
+        # Return a more detailed error message
+        error_details = str(e)
+        return jsonify({
+            "error": "Failed to process audio", 
+            "details": error_details,
+            "transcription": "[Error in audio processing]"
+        }), 500
 
 @routes.route('/api/interview/analyze-transcript', methods=['POST'])
 @jwt_required()

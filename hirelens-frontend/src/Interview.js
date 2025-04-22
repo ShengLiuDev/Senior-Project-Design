@@ -183,6 +183,9 @@ function Interview() {
 									const backendTranscript = audioData.transcription || '';
 									console.log('Backend transcription result:', backendTranscript);
 									
+									// Define transcription variable before using it
+									let transcription;
+									
 									// If the backend returns a message in brackets, it's likely an error or status message
 									if (backendTranscript.startsWith('[') && 
 										(backendTranscript.includes('Error') || 

@@ -243,76 +243,67 @@ class InterviewRecorder:
             if file_size < 100:  # Very small file likely means no audio was recorded
                 print("Audio file too small, likely no speech recorded")
                 return "[No speech detected]"
-                
-            # If it's a WebM file, convert it to WAV first
-            if audio_file_path.endswith('.webm'):
-                try:
-                    # Convert webm to wav using ffmpeg
-                    wav_file = os.path.join(os.path.dirname(audio_file_path), 
-                                          f"{os.path.basename(audio_file_path).split('.')[0]}.wav")
-                    
-                    # Use ffmpeg to convert
-                    import subprocess
-                    command = ['ffmpeg', '-i', audio_file_path, '-ac', '1', '-ar', '16000', wav_file]
-                    
-                    # Run the command
-                    print(f"Converting WebM to WAV: {audio_file_path} -> {wav_file}")
-                    subprocess.run(command, check=True, capture_output=True)
-                    
-                    # Use the WAV file instead
-                    audio_file_path = wav_file
-                    print(f"Conversion successful, using {wav_file}")
-                except Exception as e:
-                    print(f"Error converting WebM to WAV: {e}")
-                    print("Will try to process the WebM file directly")
             
-            # Initialize a RealtimeSTT recorder and process the file
+            # Simplified approach - try SpeechRecognition first
             try:
-                # Use our existing recorder if available
-                if hasattr(self, 'recorder') and self.recorder:
-                    # Create a new recorder specifically for this file
+                import speech_recognition as sr
+                r = sr.Recognizer()
+                
+                # Convert WebM to WAV if needed
+                wav_file = audio_file_path
+                if audio_file_path.endswith('.webm'):
+                    try:
+                        wav_file = os.path.join(os.path.dirname(audio_file_path), 
+                                             f"{os.path.basename(audio_file_path).split('.')[0]}.wav")
+                        
+                        # Use ffmpeg to convert if available
+                        import subprocess
+                        print(f"Converting WebM to WAV: {audio_file_path} -> {wav_file}")
+                        command = ['ffmpeg', '-i', audio_file_path, '-ac', '1', '-ar', '16000', wav_file]
+                        subprocess.run(command, check=True, capture_output=True)
+                        print(f"Conversion successful, using {wav_file}")
+                    except Exception as e:
+                        print(f"Error converting WebM to WAV: {e}")
+                        print("Will try to process with original file")
+                        wav_file = audio_file_path
+                
+                print(f"Processing with SpeechRecognition: {wav_file}")
+                with sr.AudioFile(wav_file) as source:
+                    # Adjust for ambient noise
+                    r.adjust_for_ambient_noise(source, duration=0.5)
+                    
+                    # Record audio data
+                    audio_data = r.record(source)
+                    
+                    # Use Google's speech recognition
+                    text = r.recognize_google(audio_data)
+                    print(f"Google Speech Recognition result: {text}")
+                    return text
+            except Exception as sr_error:
+                print(f"SpeechRecognition error: {sr_error}")
+                
+                # Fallback to RealtimeSTT
+                try:
+                    # Create a fresh recorder instance to avoid any state issues
                     from RealtimeSTT import AudioToTextRecorder
                     file_recorder = AudioToTextRecorder(
                         model="base",
-                        language="en",
-                        silero_sensitivity=0.7,
-                        webrtc_sensitivity=4
+                        language="en"
                     )
                     
                     # Process the file
-                    print(f"Processing file with RealtimeSTT: {audio_file_path}")
-                    text = file_recorder.process_file(audio_file_path)
-                    print(f"Transcription result: {text}")
+                    text = file_recorder.process_file(wav_file or audio_file_path)
+                    print(f"RealtimeSTT result: {text}")
                     return text if text else "[No speech detected]"
-            except Exception as file_process_error:
-                print(f"Error processing with RealtimeSTT: {file_process_error}")
-                
-                # Fallback to using SpeechRecognition if RealtimeSTT fails
-                try:
-                    import speech_recognition as sr
-                    r = sr.Recognizer()
-                    
-                    # Load audio file
-                    with sr.AudioFile(audio_file_path) as source:
-                        # Adjust for ambient noise
-                        r.adjust_for_ambient_noise(source, duration=0.5)
-                        
-                        # Record audio data
-                        audio_data = r.record(source)
-                        
-                        # Use Google's speech recognition
-                        text = r.recognize_google(audio_data)
-                        print(f"Google Speech Recognition result: {text}")
-                        return text
-                except Exception as speech_recog_error:
-                    print(f"Error with SpeechRecognition: {speech_recog_error}")
+                except Exception as rtstt_error:
+                    print(f"RealtimeSTT error: {rtstt_error}")
                     return "[Error during transcription]"
             
         except Exception as e:
             print(f"Error in transcribe_from_file: {e}")
             import traceback
             traceback.print_exc()
-            return "[Error during transcription]"
+            return f"[Error during transcription: {str(e)}]"
 
 def get_random_questions(num_questions=3):
     """Get random interview questions"""

@@ -6,6 +6,7 @@ import ScoreHomepage from './ScoreHomepage';
 import Interview from './Interview';
 import AllResults from './AllResults';
 import ProtectedRoute from './ProtectedRoute';
+import TestAudio from './TestAudio';
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/login/callback" element={<LoginCallback />} />
+          <Route path="/test-audio" element={<TestAudio />} />
           
           {/* Protected Routes */}
           <Route path="/score-homepage" element={

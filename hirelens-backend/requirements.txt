@@ -37,3 +37,8 @@ pydub-ffmpeg
 pocketsphinx
 numpy
 ffmpeg
+RealtimeSTT
+torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
+torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cpu
+transformers==4.35.0
+accelerate==0.23.0

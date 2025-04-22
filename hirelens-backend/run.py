@@ -36,12 +36,85 @@ def main():
     # Create and run Flask app
     app = create_app()
     
+    # Load models with special error handling
+    print("\n=== Preloading Models ===")
+    try:
+        # Try to import and initialize the sentiment analyzer
+        from app.speech_to_text.sentiment_analysis import SentimentAnalyzer
+        sentiment_analyzer = SentimentAnalyzer()
+    except Exception as e:
+        print(f"⚠️ Warning: Error initializing sentiment analyzer: {str(e)}")
+        print("Continuing with fallback functionality")
+    
     # Add a simple test route directly to the app
     @app.route('/api/test-connection', methods=['GET'])
     def test_connection():
         from flask import jsonify
         print("Test connection endpoint called!")
         return jsonify({"status": "success", "message": "Backend server is running"})
+    
+    # Add a route for testing transcription without authentication
+    @app.route('/api/test-transcription', methods=['POST'])
+    def test_transcription():
+        from flask import request, jsonify
+        import base64
+        import os
+        import uuid
+        
+        print("Test transcription endpoint called!")
+        
+        try:
+            temp_dir = os.path.join(os.getcwd(), 'temp_audio')
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            # Generate unique filename
+            filename = f"test_audio_{uuid.uuid4().hex}.webm"
+            filepath = os.path.join(temp_dir, filename)
+            
+            if request.is_json:
+                data = request.get_json()
+                
+                if 'audio_data' not in data:
+                    return jsonify({"error": "No audio data provided"}), 400
+                    
+                # Extract the base64 data
+                base64_data = data['audio_data']
+                if ',' in base64_data:
+                    base64_data = base64_data.split(',', 1)[1]
+                
+                # Decode and save as binary file
+                with open(filepath, 'wb') as f:
+                    f.write(base64.b64decode(base64_data))
+                
+                # Import STT module
+                from app.speech_to_text.stt import InterviewRecorder
+                recorder = InterviewRecorder()
+                
+                # Transcribe the audio
+                transcription = recorder.transcribe_from_file(filepath)
+                
+                # Clean up
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                    
+                # Check for WAV file
+                wav_path = filepath.replace('.webm', '.wav')
+                if os.path.exists(wav_path):
+                    os.remove(wav_path)
+                
+                return jsonify({
+                    "status": "success",
+                    "transcription": transcription
+                })
+                
+            else:
+                return jsonify({"error": "Request must be JSON"}), 400
+                
+        except Exception as e:
+            print(f"Error testing transcription: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
     
     # Add error handlers to prevent server crashes
     @app.errorhandler(500)
