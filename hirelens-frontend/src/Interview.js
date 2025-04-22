@@ -123,7 +123,7 @@ function Interview() {
 		}
 	};
 
-	// Simplified stopAudioRecording function that only uses backend processing
+	// Improved audio recording function that works with new backend transcription
 	const stopAudioRecording = async () => {
 		return new Promise((resolve, reject) => {
 			try {
@@ -160,113 +160,157 @@ function Interview() {
 									reader.onloadend = () => resolve(reader.result);
 								});
 								
-								// Send to backend process-audio endpoint
-								console.log("Sending audio to backend for processing, size:", audioBlob.size, "bytes");
-								
-								const audioResponse = await fetch('http://localhost:5000/api/interview/process-audio', {
-									method: 'POST',
-									headers: {
-										'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`,
-										'Content-Type': 'application/json'
-									},
-									body: JSON.stringify({
-										session_id: sessionIdRef.current,
-										audio_data: base64Audio,
-										question: questions[currentQuestionIndex]
-									})
-								});
-								
-								if (audioResponse.ok) {
-									const audioData = await audioResponse.json();
-									
-									// Check if we got a valid transcription or an error message
-									const backendTranscript = audioData.transcription || '';
-									console.log('Backend transcription result:', backendTranscript);
-									
-									// Define transcription variable before using it
-									let transcription;
-									
-									// If the backend returns a message in brackets, it's likely an error or status message
-									if (backendTranscript.startsWith('[') && 
-										(backendTranscript.includes('Error') || 
-										backendTranscript.includes('No speech') ||
-										backendTranscript.includes('too quiet'))) {
+								// Send to backend process-audio endpoint with retry capability
+								let retryCount = 0;
+								const maxRetries = 2;
+								let audioResponse = null;
+								let audioData = null;
+
+								while (retryCount <= maxRetries) {
+									try {
+										console.log(`Sending audio to backend (attempt ${retryCount + 1}/${maxRetries + 1}), size: ${audioBlob.size} bytes`);
 										
-										// Show user-friendly version of the error
-										if (backendTranscript.includes('too quiet')) {
-											setCurrentTranscript("Your audio was too quiet. Please speak louder or move closer to the microphone.");
-										} else if (backendTranscript.includes('No speech')) {
-											setCurrentTranscript("No speech was detected. Please speak clearly into your microphone.");
-										} else if (backendTranscript.includes('Audio file too short')) {
-											setCurrentTranscript("The recording was too short. Please speak for a longer period.");
-										} else {
-											setCurrentTranscript("Speech transcription failed. Please try again and speak clearly.");
+										// Update UI during retry
+										if (retryCount > 0) {
+											setCurrentTranscript(`Processing your answer... (retry ${retryCount}/${maxRetries})`);
 										}
 										
-										// Use the backend message as the transcript for processing
-										transcription = backendTranscript;
+										// Make request to backend
+										audioResponse = await fetch('http://localhost:5000/api/interview/process-audio', {
+											method: 'POST',
+											headers: {
+												'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`,
+												'Content-Type': 'application/json'
+											},
+											body: JSON.stringify({
+												session_id: sessionIdRef.current,
+												audio_data: base64Audio,
+												question: questions[currentQuestionIndex]
+											})
+										});
+										
+										if (audioResponse.ok) {
+											audioData = await audioResponse.json();
+											if (audioData && audioData.transcription) {
+												break; // Successful response, exit retry loop
+											}
+										}
+										
+										// If we get here, response wasn't successful. Wait before retrying.
+										retryCount++;
+										if (retryCount <= maxRetries) {
+											await new Promise(r => setTimeout(r, 1000 * retryCount)); // Exponential backoff
+										}
+									} catch (fetchError) {
+										console.error(`Fetch error on attempt ${retryCount + 1}:`, fetchError);
+										retryCount++;
+										if (retryCount <= maxRetries) {
+											await new Promise(r => setTimeout(r, 1000 * retryCount));
+										}
+									}
+								}
+								
+								// Check final results after all retry attempts
+								if (!audioResponse || !audioResponse.ok || !audioData) {
+									throw new Error("Failed to process audio after multiple attempts");
+								}
+								
+								// Process the transcription result
+								const backendTranscript = audioData.transcription || '';
+								console.log('Backend transcription result:', backendTranscript);
+								
+								// Define transcription variable before using it
+								let transcription;
+								
+								// If the backend returns a message in brackets, it's likely an error or status message
+								if (backendTranscript.startsWith('[') && 
+									(backendTranscript.includes('Error') || 
+									backendTranscript.includes('No speech') ||
+									backendTranscript.includes('too quiet') ||
+									backendTranscript.includes('too small') ||
+									backendTranscript.includes('too short'))) {
+									
+									// Show user-friendly version of the error
+									if (backendTranscript.includes('too quiet')) {
+										setCurrentTranscript("Your audio was too quiet. Please speak louder or move closer to the microphone.");
+									} else if (backendTranscript.includes('No speech')) {
+										setCurrentTranscript("No speech was detected. Please speak clearly into your microphone.");
+									} else if (backendTranscript.includes('too short') || backendTranscript.includes('too small')) {
+										setCurrentTranscript("The recording was too short. Please speak for a longer period.");
 									} else {
-										// We got a valid transcription
-										transcription = backendTranscript;
-										setCurrentTranscript(transcription);
+										setCurrentTranscript("Speech transcription failed. Please try again and speak clearly.");
 									}
 									
-									// Only try to analyze if we have a real transcription
-									if (transcription && 
-										!transcription.startsWith('[') && 
-										transcription.trim().length > 0) {
+									// Use the backend message as the transcript for processing
+									transcription = backendTranscript;
+								} else {
+									// We got a valid transcription
+									transcription = backendTranscript;
+									setCurrentTranscript(transcription);
+								}
+								
+								// Only try to analyze if we have a real transcription
+								if (transcription && 
+									!transcription.startsWith('[') && 
+									transcription.trim().length > 0) {
+									
+									try {
+										// Simple check if server is still responding
+										const pingResponse = await fetch('http://localhost:5000', { 
+											method: 'GET' 
+										}).catch(() => null);
 										
-										try {
-											// Simple check if server is still responding
-											const pingResponse = await fetch('http://localhost:5000/api/interview/process-audio', { 
-												method: 'OPTIONS' 
-											}).catch(() => null);
+										if (pingResponse && pingResponse.ok) {
+											// Server is responding, try to analyze
+											const analysisResponse = await fetch('http://localhost:5000/api/interview/analyze-transcript', {
+												method: 'POST',
+												headers: {
+													'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`,
+													'Content-Type': 'application/json'
+												},
+												body: JSON.stringify({
+													session_id: sessionIdRef.current,
+													transcript: transcription,
+													question: questions[currentQuestionIndex]
+												})
+											});
 											
-											if (pingResponse && pingResponse.ok) {
-												// Server is responding, try to analyze
-												const analysisResponse = await fetch('http://localhost:5000/api/interview/analyze-transcript', {
-													method: 'POST',
-													headers: {
-														'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`,
-														'Content-Type': 'application/json'
-													},
-													body: JSON.stringify({
-														session_id: sessionIdRef.current,
-														transcript: transcription,
-														question: questions[currentQuestionIndex]
-													})
-												});
+											if (analysisResponse.ok) {
+												const analysisResult = await analysisResponse.json();
+												console.log("Analysis result:", analysisResult);
 												
-												if (analysisResponse.ok) {
-													const analysisResult = await analysisResponse.json();
-													console.log("Analysis result:", analysisResult);
-												} else {
-													console.error("Error analyzing transcript:", await analysisResponse.text());
+												// Check if we have a positive reformulation to show
+												if (analysisResult.positive_reformulation && analysisResult.sentiment === 'negative') {
+													console.log("Positive reformulation available");
 												}
 											} else {
-												console.log("Server not responding for analysis, skipping analyze-transcript call");
+												console.error("Error analyzing transcript:", await analysisResponse.text());
 											}
-										} catch (analysisError) {
-											console.error("Network error when analyzing transcript:", analysisError);
+										} else {
+											console.log("Server not responding for analysis, skipping analyze-transcript call");
 										}
+									} catch (analysisError) {
+										console.error("Network error when analyzing transcript:", analysisError);
 									}
-								} else {
-									console.error("Error from backend transcription:", await audioResponse.text());
-									setCurrentTranscript("Error transcribing audio. Please try again.");
 								}
 							} catch (backendError) {
 								console.error("Error with backend transcription:", backendError);
 								setCurrentTranscript("Error processing audio. Please try again.");
+							} finally {
+								// Ensure processing state is cleared
+								setIsProcessingAnswer(false);
 							}
 						} else {
 							console.warn("Audio blob is empty, skipping transcription");
 							setCurrentTranscript("No audio recorded. Please try again.");
+							setIsProcessingAnswer(false);
 						}
 						
 						resolve(audioBlob);
 					} catch (error) {
 						console.error("Error in onstop handler:", error);
 						setCurrentTranscript("Error processing recording. Please try again.");
+						setIsProcessingAnswer(false);
 						reject(error);
 					}
 				};
@@ -277,6 +321,7 @@ function Interview() {
 				
 			} catch (err) {
 				console.error('Error stopping audio recording:', err);
+				setIsProcessingAnswer(false);
 				reject(err);
 			}
 		});
@@ -323,6 +368,37 @@ function Interview() {
 		if (timeRemaining <= 10) return '#dc3545'; // Red when 10 seconds or less
 		if (timeRemaining <= 30) return '#ffc107'; // Yellow when 30 seconds or less
 		return '#0d6efd'; // Default blue
+	};
+	
+	// Render transcript with better formatting and indicators
+	const renderTranscript = () => {
+		if (isProcessingAnswer) {
+			return (
+				<div className="transcription-box processing">
+					<div className="processing-indicator">
+						<div className="spinner"></div>
+					</div>
+					<p>{currentTranscript || "Processing your answer..."}</p>
+				</div>
+			);
+		}
+		
+		// Check if the transcript contains an error message (starts with '[')
+		if (currentTranscript && currentTranscript.startsWith('[')) {
+			return (
+				<div className="transcription-box error">
+					<div className="error-icon">⚠️</div>
+					<p>{currentTranscript.replace(/^\[|\]$/g, '')}</p>
+				</div>
+			);
+		}
+		
+		// Regular transcript
+		return currentTranscript ? (
+			<div className="transcription-box">
+				<strong>Your answer:</strong> {currentTranscript}
+			</div>
+		) : null;
 	};
 	
 	// Function to convert sentiment score to display text and icon
@@ -666,7 +742,7 @@ function Interview() {
 						};
 						
 						// Show an error message but don't make it seem too serious
-						setError('Backend analysis is unavailable, but your answer was recorded successfully.');
+						setError('Analysis is unavailable due to length of your answer, but your answer was recorded successfully. Please try to answer the question more thoroughly');
 						
 						// Update question results with fallback data
 						setQuestionResults(prev => {
@@ -829,12 +905,8 @@ function Interview() {
 							</>
 						)}
 						
-						{/* Display current transcription if available */}
-						{currentTranscript && status === 'attempt_completed' && (
-							<div className="transcription-box">
-								<strong>Your answer:</strong> {currentTranscript}
-							</div>
-						)}
+						{/* Always display transcription when available */}
+						{(status === 'recording' || status === 'attempt_completed' || isProcessingAnswer) && renderTranscript()}
 
 						<div className="controls">
 							{status === 'ready' && (
@@ -980,7 +1052,7 @@ function Interview() {
 										<h3>Question {index + 1}: {question}</h3>
 										{bestAttempt ? (
 											<div className="best-attempt">
-												<p>Best Score: {bestAttempt.overall_score.toFixed(1)}% (Attempt {bestAttempt.attempt})</p>
+												<p>OverallScore: {bestAttempt.overall_score.toFixed(1)}% (Attempt {bestAttempt.attempt})</p>
 												
 												{/* Show transcript */}
 												<div className="transcript-section">
@@ -998,28 +1070,63 @@ function Interview() {
 												
 												{bestAttempt.answer_analysis && bestAttempt.answer_analysis.analysis && (
 													<div className="feedback-section">
-														<h4>Feedback:</h4>
-														<div className="feedback-item">
-															<h5>Strengths:</h5>
-															<ul>
-																{bestAttempt.answer_analysis.analysis.strengths?.map((strength, i) => (
-																	<li key={i}>{strength}</li>
-																))}
-															</ul>
+														<h4>Analysis:</h4>
+														<div className="feedback-item strengths-weaknesses">
+															<h5>Strengths & Areas for Improvement</h5>
+															<div className="two-column-feedback">
+																<div className="feedback-column">
+																	<h6>Strengths:</h6>
+																	<ul>
+																		{bestAttempt.answer_analysis.analysis.strengths?.map((strengths, i) => (
+																			<li key={i}>{strengths}</li>
+																		))}
+																	</ul>
+																</div>
+																<div className="feedback-column">
+																	<h6>Areas to Improve:</h6>
+																	<ul>
+																		{bestAttempt.answer_analysis.analysis.improvements?.map((improvement, i) => (
+																			<li key={i}>{improvement}</li>
+																		))}
+																	</ul>
+																</div>
+															</div>
 														</div>
-														<div className="feedback-item">
-															<h5>Areas for Improvement:</h5>
+														
+														{/* Show competencies if available */}
+														{bestAttempt.answer_analysis.analysis.competencies && bestAttempt.answer_analysis.analysis.competencies.length > 0 && (
+															<div className="feedback-item">
+																<h5>Key Competencies Demonstrated:</h5>
+																<ul>
+																	{bestAttempt.answer_analysis.analysis.competencies.map((competency, i) => (
+																		<li key={i}>{competency}</li>
+																	))}
+																</ul>
+															</div>
+														)}
+														
+														{/* Show weaknesses section */}
+														<div className="feedback-item weaknesses-section">
+															<h5>Weaknesses:</h5>
 															<ul>
-																{bestAttempt.answer_analysis.analysis.improvements?.map((improvement, i) => (
+																{bestAttempt.answer_analysis.analysis.weaknesses?.map((weakness, i) => (
+																	<li key={i}>{weakness}</li>
+																)) || bestAttempt.answer_analysis.analysis.improvements?.map((improvement, i) => (
 																	<li key={i}>{improvement}</li>
-																))}
+																)) || <li>No specific weaknesses identified</li>}
 															</ul>
 														</div>
 														
-														{/* Add suggestions section if available */}
+														{/* Show score if available */}
+														<div className="feedback-item">
+															<h5>Answer Quality Score:</h5>
+															<p className="score-value">{bestAttempt.answer_analysis.analysis.score}/100</p>
+														</div>
+														
+														{/* Show suggestions as Feedback */}
 														{bestAttempt.answer_analysis.analysis.suggestions && bestAttempt.answer_analysis.analysis.suggestions.length > 0 && (
 															<div className="feedback-item">
-																<h5>Suggestions:</h5>
+																<h5>Specific Suggestions:</h5>
 																<ul>
 																	{bestAttempt.answer_analysis.analysis.suggestions.map((suggestion, i) => (
 																		<li key={i}>{suggestion}</li>

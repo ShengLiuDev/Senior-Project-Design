@@ -92,8 +92,9 @@ class AnswerAnalyzer:
         
         Please analyze the candidate's answer and provide a JSON response with the following structure:
         {{
-            "score": <number between 1.0-10.0>,\n
-            "strengths": ["strength1", "strength2", ...],\n
+            "score": <number between 1.0-100.0>,\n
+            "strengths": ["specific strength1", "specific strength2", ...],\n
+            "weaknesses": ["specific weakness1", "specific weakness2", ...],\n
             "improvements": ["improvement1", "improvement2", ...],\n
             "suggestions": ["suggestion1", "suggestion2", ...],\n
             "competencies": ["competency1", "competency2", ...]\n
@@ -101,21 +102,21 @@ class AnswerAnalyzer:
         
         Focus on:
         1. How well the answer matches the quality of the good answer
-        2. Key strengths in their response
-        3. Areas for improvement
-        4. Specific suggestions for improvement
-        5. Key competencies demonstrated
+        2. SPECIFIC strengths in their response (be detailed, not generic)
+        3. SPECIFIC weaknesses in their response (be detailed, not generic)
+        4. Areas for improvement
+        5. Specific suggestions for improvement
+        6. Key competencies demonstrated
         
-        NOTE: if a users answer encompasses a majority of a good answer they should
-        be scoring higher than a 6.0(60.0%) to 7.0(70.0%), hovering around 8.0(80.0%) to 9.0(90.0%). However, if the user
-        provides a response that is not very relevant to the question, they should
-        score lower than a 4.0(40.0%).
+        NOTE: if a users answer encompasses a majority of a good answer they should be scoring higher than 60.0 to 70.0, hovering around 80.0 to 90.0 it should be a very specific score users get. However, if the user provides a response that is not very relevant to the question, they should score lower than 40.0.
         
-        Also when you give them a score, make sure you give them a percentage score that is like 87.4% for example. You can nitpick
-        and say that the user could have done better and deduct say 1.4%, but the score should be a percentage score.
+        The score must be on a scale of 1.0-100.0, not 1.0-10.0.
         
-        Additional Note: If a user's answer is in STAR format, give additional points for the STAR format. 
-        Else deduct points for not using the STAR format.
+        Also when you give them a score, make sure you give them a percentage score that is like 87.4% for example. You can nitpick and say that the user could have done better and deduct say 1.4%, but the score should be a percentage score.
+        
+        Additional Note: If a user's answer is in STAR format, give additional points for the STAR format. Else deduct points as neededfor not using the STAR format.
+        
+        IMPORTANT: Be SUPER SPECIFIC in your analysis of strengths and weaknesses. Avoid generic statements like "Good communication skills" and instead provide detailed observations like "Effectively articulated how they resolved a conflict by using active listening and compromise." Also feedback can be longer if needed. 
         """
         
         # Make the API request
@@ -182,6 +183,7 @@ class AnswerAnalyzer:
                 return {
                     "score": analysis.get("score", 0),
                     "strengths": analysis.get("strengths", []),
+                    "weaknesses": analysis.get("weaknesses", []),
                     "improvements": analysis.get("improvements", []),
                     "suggestions": analysis.get("suggestions", []),
                     "competencies": analysis.get("competencies", []),
