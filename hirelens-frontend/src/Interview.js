@@ -1052,8 +1052,6 @@ function Interview() {
 										<h3>Question {index + 1}: {question}</h3>
 										{bestAttempt ? (
 											<div className="best-attempt">
-												<p>OverallScore: {bestAttempt.overall_score.toFixed(1)}% (Attempt {bestAttempt.attempt})</p>
-												
 												{/* Show transcript */}
 												<div className="transcript-section">
 													<h4>Your Answer:</h4>

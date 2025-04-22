@@ -24,7 +24,7 @@ class InterviewRecorder:
                 model="base",                  # Use base model for faster processing
                 language="en",                 # English language
                 silero_sensitivity=0.7,        # Slightly higher sensitivity
-                webrtc_sensitivity=3           # Increase sensitivity for web use 0-3 is a valid state 
+                webrtc_sensitivity=2           # Increase sensitivity for web use 0-3 is a valid state 
             )
             
             # Audio configuration
