@@ -24,9 +24,7 @@ class InterviewRecorder:
                 model="base",                  # Use base model for faster processing
                 language="en",                 # English language
                 silero_sensitivity=0.7,        # Slightly higher sensitivity
-                webrtc_sensitivity=4,          # Increase sensitivity for web use
-                min_energy_threshold=1000,     # Lower energy threshold for quiet speakers
-                dynamic_energy_adjustment=True # Automatically adjust for ambient noise
+                webrtc_sensitivity=4           # Increase sensitivity for web use
             )
             
             # Audio configuration

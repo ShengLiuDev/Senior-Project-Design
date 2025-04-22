@@ -152,6 +152,8 @@ def main():
             threaded=True,       # enable threading
             use_debugger=app.debug
         )
+    except KeyboardInterrupt:
+        print("\n⚠️ Server stopped by user")
     except Exception as e:
         print(f"\n❌ Error starting Flask server: {str(e)}")
         print("Please check if port 5000 is already in use")
