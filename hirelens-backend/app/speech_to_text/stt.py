@@ -18,27 +18,67 @@ from app.sentiment_analysis.sentiment_analysis_functions import sentiment_analys
 
 class InterviewRecorder:
     def __init__(self):
-        # Initialize RealtimeSTT recorder
-        self.recorder = AudioToTextRecorder(
-            model="base",
-            language="en",
-            silero_sensitivity=0.6,
-            webrtc_sensitivity=3
-        )
-        
-        # Audio configuration
-        self.CHUNK = 1024
-        self.FORMAT = pyaudio.paInt16
-        self.CHANNELS = 1
-        self.RATE = 44100
-        
-        # Initialize analyzers
-        self.answer_analyzer = AnswerAnalyzer()
-        self.sentiment_analyzer = sentiment_analysis()
-        
-        # Ensure recordings directory exists
-        self.recordings_dir = os.path.join(project_root, '.recordings')
-        os.makedirs(self.recordings_dir, exist_ok=True)
+        try:
+            # Initialize RealtimeSTT recorder with improved parameters for web usage
+            self.recorder = AudioToTextRecorder(
+                model="base",                  # Use base model for faster processing
+                language="en",                 # English language
+                silero_sensitivity=0.7,        # Slightly higher sensitivity
+                webrtc_sensitivity=4,          # Increase sensitivity for web use
+                min_energy_threshold=1000,     # Lower energy threshold for quiet speakers
+                dynamic_energy_adjustment=True # Automatically adjust for ambient noise
+            )
+            
+            # Audio configuration
+            self.CHUNK = 1024
+            self.FORMAT = pyaudio.paInt16
+            self.CHANNELS = 1
+            self.RATE = 44100
+            
+            # Initialize analyzers
+            self.answer_analyzer = AnswerAnalyzer()
+            self.sentiment_analyzer = sentiment_analysis()
+            
+            # Ensure recordings directory exists
+            self.recordings_dir = os.path.join(project_root, '.recordings')
+            os.makedirs(self.recordings_dir, exist_ok=True)
+            
+            # Print audio device info for debugging
+            self._print_audio_devices()
+            
+            print("✅ AudioToTextRecorder initialized successfully")
+        except Exception as e:
+            print(f"❌ Error initializing AudioToTextRecorder: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # Create a fallback recorder that will return empty strings
+            # This prevents the app from crashing if audio recording fails
+            from types import SimpleNamespace
+            self.recorder = SimpleNamespace()
+            self.recorder.start = lambda: None
+            self.recorder.stop = lambda: None
+            self.recorder.text = lambda: ""
+            
+    def _print_audio_devices(self):
+        """Print available audio devices for debugging"""
+        try:
+            p = pyaudio.PyAudio()
+            info = p.get_host_api_info_by_index(0)
+            num_devices = info.get('deviceCount')
+            
+            print(f"\n=== Available Audio Devices ({num_devices}) ===")
+            for i in range(num_devices):
+                device_info = p.get_device_info_by_host_api_device_index(0, i)
+                name = device_info.get('name')
+                inputs = device_info.get('maxInputChannels')
+                if inputs > 0:  # Only show input devices
+                    print(f"Device {i}: {name} (Inputs: {inputs})")
+            print("="*40)
+            
+            p.terminate()
+        except Exception as e:
+            print(f"Error listing audio devices: {str(e)}")
 
     def record_answer(self, question, duration=90):
         """
@@ -179,6 +219,100 @@ class InterviewRecorder:
                             break
             finally:
                 termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+
+    def transcribe_from_file(self, audio_file_path):
+        """
+        Transcribe audio from an existing file
+        
+        Args:
+            audio_file_path: Path to the audio file
+            
+        Returns:
+            str: Transcribed text
+        """
+        try:
+            # Check if file exists
+            if not os.path.exists(audio_file_path):
+                print(f"Audio file not found: {audio_file_path}")
+                return "[Audio file not found]"
+            
+            # Check file size
+            file_size = os.path.getsize(audio_file_path)
+            print(f"Audio file size: {file_size} bytes")
+            
+            if file_size < 100:  # Very small file likely means no audio was recorded
+                print("Audio file too small, likely no speech recorded")
+                return "[No speech detected]"
+                
+            # If it's a WebM file, convert it to WAV first
+            if audio_file_path.endswith('.webm'):
+                try:
+                    # Convert webm to wav using ffmpeg
+                    wav_file = os.path.join(os.path.dirname(audio_file_path), 
+                                          f"{os.path.basename(audio_file_path).split('.')[0]}.wav")
+                    
+                    # Use ffmpeg to convert
+                    import subprocess
+                    command = ['ffmpeg', '-i', audio_file_path, '-ac', '1', '-ar', '16000', wav_file]
+                    
+                    # Run the command
+                    print(f"Converting WebM to WAV: {audio_file_path} -> {wav_file}")
+                    subprocess.run(command, check=True, capture_output=True)
+                    
+                    # Use the WAV file instead
+                    audio_file_path = wav_file
+                    print(f"Conversion successful, using {wav_file}")
+                except Exception as e:
+                    print(f"Error converting WebM to WAV: {e}")
+                    print("Will try to process the WebM file directly")
+            
+            # Initialize a RealtimeSTT recorder and process the file
+            try:
+                # Use our existing recorder if available
+                if hasattr(self, 'recorder') and self.recorder:
+                    # Create a new recorder specifically for this file
+                    from RealtimeSTT import AudioToTextRecorder
+                    file_recorder = AudioToTextRecorder(
+                        model="base",
+                        language="en",
+                        silero_sensitivity=0.7,
+                        webrtc_sensitivity=4
+                    )
+                    
+                    # Process the file
+                    print(f"Processing file with RealtimeSTT: {audio_file_path}")
+                    text = file_recorder.process_file(audio_file_path)
+                    print(f"Transcription result: {text}")
+                    return text if text else "[No speech detected]"
+            except Exception as file_process_error:
+                print(f"Error processing with RealtimeSTT: {file_process_error}")
+                
+                # Fallback to using SpeechRecognition if RealtimeSTT fails
+                try:
+                    import speech_recognition as sr
+                    r = sr.Recognizer()
+                    
+                    # Load audio file
+                    with sr.AudioFile(audio_file_path) as source:
+                        # Adjust for ambient noise
+                        r.adjust_for_ambient_noise(source, duration=0.5)
+                        
+                        # Record audio data
+                        audio_data = r.record(source)
+                        
+                        # Use Google's speech recognition
+                        text = r.recognize_google(audio_data)
+                        print(f"Google Speech Recognition result: {text}")
+                        return text
+                except Exception as speech_recog_error:
+                    print(f"Error with SpeechRecognition: {speech_recog_error}")
+                    return "[Error during transcription]"
+            
+        except Exception as e:
+            print(f"Error in transcribe_from_file: {e}")
+            import traceback
+            traceback.print_exc()
+            return "[Error during transcription]"
 
 def get_random_questions(num_questions=3):
     """Get random interview questions"""

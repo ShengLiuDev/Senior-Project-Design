@@ -30,3 +30,10 @@ opencv-python
 numpy
 flask_jwt_extended
 pymongo
+SpeechRecognition
+pyaudio
+pydub
+pydub-ffmpeg
+pocketsphinx
+numpy
+ffmpeg

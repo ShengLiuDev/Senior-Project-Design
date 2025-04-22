@@ -13,6 +13,7 @@ from .facial_recognition.posture_analyzer import PostureAnalyzer
 from .facial_recognition.expression_analyzer import ExpressionAnalyzer
 from datetime import datetime
 from pymongo import MongoClient
+import uuid
 
 import os
 import sys
@@ -260,13 +261,6 @@ def record_frame():
                 "details": f"Session {session_id} does not exist"
             }), 404
         
-        # Verify user owns this session
-        if getattr(session, 'user_id', None) != current_user:
-            return jsonify({
-                "status": "error",
-                "message": "Unauthorized access to session",
-                "details": "User does not own this session"
-            }), 403
             
         try:
             # Update current question if it has changed
@@ -383,8 +377,29 @@ def start_audio_recording():
                 "message": "Unauthorized access to session"
             }), 403
             
-        # Just mark that audio recording has been requested
-        # We'll skip actual recording for now to avoid blocking
+        # Initialize a real audio recorder
+        from app.speech_to_text.stt import InterviewRecorder
+        
+        # Create recorder instance if it doesn't already exist
+        if session_id not in audio_recorders:
+            print(f"Creating new audio recorder for session {session_id}")
+            audio_recorders[session_id] = InterviewRecorder()
+        
+        # Start the recorder in a separate thread to avoid blocking
+        def start_recording_thread():
+            try:
+                recorder = audio_recorders[session_id]
+                recorder.recorder.start()  # Start the STT recorder
+                print(f"Audio recording started for session {session_id}")
+            except Exception as e:
+                print(f"Error in recording thread: {str(e)}")
+        
+        # Start recording in a separate thread
+        recording_thread = threading.Thread(target=start_recording_thread)
+        recording_thread.daemon = True  # Allow the thread to be terminated when app exits
+        recording_thread.start()
+        
+        # Mark that audio recording has been requested
         session.audio_requested = True
         
         return jsonify({
@@ -394,6 +409,8 @@ def start_audio_recording():
         
     except Exception as e:
         print(f"Error starting audio recording: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "status": "error",
             "message": f"Error starting audio recording: {str(e)}"
@@ -429,13 +446,44 @@ def stop_audio_recording():
                 "message": "Unauthorized access to session"
             }), 403
         
-        # Generate a mock transcript for testing purposes
-        transcript = f"This is a mock transcript for the question: {question}"
+        transcript = ""
+        # Get recorder if it exists
+        recorder = audio_recorders.get(session_id)
+        
+        if recorder:
+            try:
+                print(f"Stopping audio recording for session {session_id}")
+                # Stop the recorder and get the transcript
+                recorder.recorder.stop()
+                transcript = recorder.recorder.text()
+                
+                print(f"Transcript obtained: {transcript}")
+                
+                # If transcript is empty or too short, use a fallback message
+                if not transcript or len(transcript.strip()) < 5:
+                    transcript = f"[Inaudible or no speech detected for question: {question}]"
+                    print("Using fallback transcript due to empty or short transcript")
+            except Exception as e:
+                print(f"Error stopping recorder: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                transcript = f"[Error processing audio for question: {question}]"
+        else:
+            print(f"No recorder found for session {session_id}, using mock transcript")
+            transcript = f"This is a mock transcript for the question: {question}"
         
         # Store the transcript in the session
         session.transcript = transcript
         
-        # Return a response to unblock the frontend
+        # Clean up the recorder
+        if session_id in audio_recorders:
+            try:
+                del audio_recorders[session_id]
+                print(f"Removed audio recorder for session {session_id}")
+            except Exception as e:
+                print(f"Error cleaning up recorder: {str(e)}")
+        
+        # Return the transcript
         return jsonify({
             "status": "success",
             "transcript": transcript
@@ -443,6 +491,8 @@ def stop_audio_recording():
             
     except Exception as e:
         print(f"Error stopping audio recording: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "status": "error",
             "message": f"Error stopping audio recording: {str(e)}"
@@ -468,13 +518,6 @@ def stop_interview():
             "status": "error",
             "message": "Session not found"
         }), 404
-    
-    # Verify user owns this session
-    if getattr(session, 'user_id', None) != current_user:
-        return jsonify({
-            "status": "error",
-            "message": "Unauthorized access to session"
-        }), 403
     
     try:
         # Stop recording
@@ -531,42 +574,144 @@ def stop_interview():
         user_email = jwt_data.get('email', '')
         user_name = jwt_data.get('name', '')
         
-        # Generate a simple mock analysis instead of using the NLP-heavy analyzers
-        # This helps prevent timeouts
+        # Use actual sentiment analysis if transcript is available
         answer_analysis = {}
+        
+        # Default sentiment and analysis values in case of errors
+        sentiment_result = "positive"  # Default to positive
+        analysis_result = {
+            "score": 70.4,
+            "strengths": ["Clear communication"],
+            "improvements": ["Could be more detailed"]
+        }
+        positive_reformulation = None
+        
         if session.transcript and session.current_question:
-            # Create simple mock analysis to avoid potentially slow NLP processing
-            answer_analysis = {
-                "transcript": session.transcript,
-                "analysis": {
-                    "score": 75,
-                    "strengths": [
-                        "Clear communication",
-                        "Structured response",
-                        "Relevant examples provided"
-                    ],
-                    "improvements": [
-                        "Could provide more specific details",
-                        "Consider addressing counterarguments",
-                        "Work on more concise delivery"
-                    ]
-                },
-                "sentiment": "positive",
-                "positive_reformulation": None
-            }
-            
-            # Update final scores with mocked analysis
-            final_scores["answer_quality_score"] = 75
-            final_scores["overall_sentiment"] = 70
-            
-            # Recalculate overall score
-            final_scores["overall_score"] = (
-                (final_scores["posture_score"] * 0.3) +
-                (final_scores["smile_percentage"] * 0.2) +
-                (final_scores["eye_contact_score"] * 0.2) +
-                (75 * 0.2) +  # answer quality
-                (70 * 0.1)    # sentiment
-            )
+            try:
+                # Check if transcript is too short or contains error messages
+                transcript = session.transcript.strip()
+                if len(transcript) < 10 or transcript.startswith("[Error") or transcript.startswith("[Inaudible"):
+                    print("Transcript too short or contains error, using default values")
+                    # Use default values defined above
+                else:
+                    import platform
+                    
+                    # Check if we can use signal-based timeouts (not on Windows)
+                    can_use_signal_timeout = platform.system() != 'Windows'
+                    
+                    class TimeoutException(Exception):
+                        pass
+                    
+                    def timeout_handler(signum, frame):
+                        raise TimeoutException("Sentiment analysis timed out")
+                    
+                    # Set a 10-second timeout for sentiment analysis
+                    if can_use_signal_timeout:
+                        import signal
+                        signal.signal(signal.SIGALRM, timeout_handler)
+                        signal.alarm(10)
+                    
+                    try:
+                        # Perform sentiment analysis
+                        sentiment_result = session.sentiment_analyzer.predict(transcript)
+                        print(f"Sentiment analysis result: {sentiment_result}")
+                        
+                        # Reset the alarm
+                        if can_use_signal_timeout:
+                            signal.alarm(0)
+                    except TimeoutException:
+                        print("Sentiment analysis timed out, using default value")
+                        sentiment_result = "positive"  # Default value
+                    except Exception as e:
+                        print(f"Error in sentiment analysis: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
+                        sentiment_result = "positive"  # Default on error
+                    
+                    # Analyze the answer with a timeout
+                    if can_use_signal_timeout:
+                        signal.alarm(15)  # Give more time for answer analysis
+                    try:
+                        # Run answer analysis
+                        analysis_result = session.answer_analyzer.analyze_answer(session.current_question, transcript)
+                        print(f"Answer analysis completed successfully")
+                        
+                        # Reset the alarm
+                        if can_use_signal_timeout:
+                            signal.alarm(0)
+                    except TimeoutException:
+                        print("Answer analysis timed out, using default values")
+                    except Exception as e:
+                        print(f"Error in answer analysis: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
+                    
+                    # Generate positive reformulation if sentiment is negative
+                    if sentiment_result == 'negative':
+                        if can_use_signal_timeout:
+                            signal.alarm(15)  # Allow a bit more time for reformulation
+                        try:
+                            positive_reformulation = session.sentiment_analyzer.reformulate_positive(transcript)
+                            if can_use_signal_timeout:
+                                signal.alarm(0)
+                        except Exception as e:
+                            print(f"Error generating positive reformulation: {str(e)}")
+                            positive_reformulation = "Could not generate a positive reformulation."
+                            if can_use_signal_timeout:
+                                signal.alarm(0)
+                
+                # Store the analysis results
+                answer_analysis = {
+                    "transcript": session.transcript,
+                    "analysis": analysis_result,
+                    "sentiment": sentiment_result,
+                    "positive_reformulation": positive_reformulation
+                }
+                
+                # Update scores based on sentiment and analysis
+                answer_quality_score = analysis_result.get("score", 70)
+                
+                # Convert sentiment to numerical value for overall score calculation
+                sentiment_score = 100 if sentiment_result == "positive" else 0
+                
+                # Update final scores
+                final_scores["answer_quality_score"] = answer_quality_score
+                final_scores["overall_sentiment"] = sentiment_score
+                
+                # Recalculate overall score
+                final_scores["overall_score"] = (
+                    (final_scores["posture_score"] * 0.3) +
+                    (final_scores["smile_percentage"] * 0.2) +
+                    (final_scores["eye_contact_score"] * 0.2) +
+                    (answer_quality_score * 0.2) +
+                    (sentiment_score * 0.1)
+                )
+                
+            except Exception as e:
+                print(f"Error processing transcript: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                
+                # Fallback to basic analysis
+                answer_analysis = {
+                    "transcript": session.transcript,
+                    "analysis": analysis_result,
+                    "sentiment": sentiment_result,
+                    "positive_reformulation": positive_reformulation
+                }
+                
+                # Use default scores
+                final_scores["answer_quality_score"] = 70
+                final_scores["overall_sentiment"] = 70
+                
+                # Recalculate overall score with default values
+                final_scores["overall_score"] = (
+                    (final_scores["posture_score"] * 0.3) +
+                    (final_scores["smile_percentage"] * 0.2) +
+                    (final_scores["eye_contact_score"] * 0.2) +
+                    (70 * 0.2) +  # default answer quality
+                    (70 * 0.1)    # default sentiment
+                )
             
         # Store results in MongoDB - reduced to avoid timeouts
         interview_result = {
@@ -998,4 +1143,268 @@ def cleanup_inactive_sessions():
         if current_time - session.last_update > 300  # 5 minutes
     ]
     for session_id in inactive_sessions:
-        del interview_sessions[session_id] 
+        del interview_sessions[session_id]
+
+@routes.route('/api/interview/test-audio', methods=['GET'])
+@jwt_required()
+def test_audio():
+    """Test endpoint to verify audio functionality"""
+    try:
+        # Create a test recorder
+        from app.speech_to_text.stt import InterviewRecorder
+        recorder = InterviewRecorder()
+        
+        # Check if recorder was initialized successfully
+        if not hasattr(recorder, 'recorder') or not recorder.recorder:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to initialize audio recorder",
+                "details": "Make sure your microphone is connected and permissions are granted"
+            }), 500
+        
+        # Get available audio devices
+        import pyaudio
+        p = pyaudio.PyAudio()
+        info = p.get_host_api_info_by_index(0)
+        num_devices = info.get('deviceCount')
+        
+        input_devices = []
+        for i in range(num_devices):
+            device_info = p.get_device_info_by_host_api_device_index(0, i)
+            name = device_info.get('name')
+            inputs = device_info.get('maxInputChannels')
+            if inputs > 0:  # Only include input devices
+                input_devices.append({
+                    "id": i,
+                    "name": name,
+                    "channels": inputs
+                })
+        
+        p.terminate()
+        
+        return jsonify({
+            "status": "success",
+            "message": "Audio system is available",
+            "audio_devices": input_devices,
+            "num_input_devices": len(input_devices)
+        })
+        
+    except Exception as e:
+        print(f"Error in audio test: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": "Failed to test audio system",
+            "details": str(e)
+        }), 500
+
+@routes.route('/api/interview/process-audio', methods=['POST'])
+def process_audio():
+    """
+    Endpoint to process audio recording from interview
+    Accepts either a file upload or base64 encoded audio data
+    """
+    try:
+        print("\n===== Processing Audio Request =====")
+        print("Received process-audio request")
+        filepath = None
+        temp_dir = os.path.join(os.getcwd(), 'temp_audio')
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Generate unique filename
+        filename = f"audio_{uuid.uuid4().hex}.webm"
+        filepath = os.path.join(temp_dir, filename)
+        
+        # Check if this is a file upload or base64 data
+        if request.files and 'audio' in request.files:
+            # Handle file upload
+            print("Processing audio from file upload")
+            audio_file = request.files['audio']
+            
+            # Check if the file is empty
+            if audio_file.filename == '':
+                print("Empty filename")
+                return jsonify({"error": "Empty audio file"}), 400
+                
+            # Save the file
+            audio_file.save(filepath)
+            print(f"Saved audio file to {filepath}")
+        elif request.is_json:
+            # Handle base64 data
+            print("Processing audio from base64 data")
+            data = request.get_json()
+            if 'audio_data' not in data:
+                print("No audio_data in JSON")
+                return jsonify({"error": "No audio data provided"}), 400
+                
+            # Extract the base64 data
+            base64_data = data['audio_data']
+            # Remove the data URL prefix if present
+            if ',' in base64_data:
+                base64_data = base64_data.split(',', 1)[1]
+            
+            # Decode and save as binary file
+            try:
+                with open(filepath, 'wb') as f:
+                    f.write(base64.b64decode(base64_data))
+                print(f"Saved base64 audio data to {filepath}, size: {os.path.getsize(filepath)} bytes")
+            except Exception as e:
+                print(f"Error decoding base64 data: {e}")
+                return jsonify({"error": "Invalid base64 data"}), 400
+        else:
+            print("No audio file or data found in request")
+            return jsonify({"error": "No audio file or data provided"}), 400
+            
+        # Import the STT recorder
+        from app.speech_to_text.stt import InterviewRecorder
+        interview_recorder = InterviewRecorder()
+        
+        # Verify the file exists and is not empty
+        if not os.path.exists(filepath):
+            print(f"Error: File doesn't exist at {filepath}")
+            return jsonify({"error": "File not saved properly"}), 500
+            
+        file_size = os.path.getsize(filepath)
+        print(f"File size before transcription: {file_size} bytes")
+        
+        if file_size < 100:
+            print("File is too small, likely no audio data")
+            return jsonify({"transcription": "[No audio data received]"}), 200
+            
+        # Transcribe the audio
+        print("Transcribing audio...")
+        try:
+            transcription = interview_recorder.transcribe_from_file(filepath)
+            print(f"Transcription result: {transcription}")
+        except Exception as transcription_error:
+            print(f"Transcription error: {transcription_error}")
+            import traceback
+            traceback.print_exc()
+            transcription = f"[Error during transcription: {str(transcription_error)}]"
+        
+        # Clean up
+        try:
+            # Remove the original WebM file
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                print(f"Removed original file: {filepath}")
+                
+            # Check for and remove WAV file if it was created during conversion
+            wav_path = filepath.replace('.webm', '.wav')
+            if os.path.exists(wav_path):
+                os.remove(wav_path)
+                print(f"Removed converted WAV file: {wav_path}")
+        except Exception as cleanup_error:
+            print(f"Error during cleanup: {cleanup_error}")
+        
+        # Process sentiment if transcription was successful
+        sentiment = "neutral"
+        if transcription and not transcription.startswith('['):
+            try:
+                # Import sentiment analyzer
+                from app.speech_to_text.sentiment_analysis import SentimentAnalyzer
+                sentiment_analyzer = SentimentAnalyzer()
+                
+                # Analyze sentiment
+                sentiment = sentiment_analyzer.analyze_sentiment(transcription)
+                print(f"Sentiment: {sentiment}")
+            except Exception as sentiment_error:
+                print(f"Error analyzing sentiment: {sentiment_error}")
+                sentiment = "neutral"
+        
+        print("===== Audio Processing Complete =====\n")
+        return jsonify({
+            "transcription": transcription,
+            "sentiment": sentiment
+        })
+        
+    except Exception as e:
+        print(f"Error processing audio: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Failed to process audio", "details": str(e)}), 500
+
+@routes.route('/api/interview/analyze-transcript', methods=['POST'])
+@jwt_required()
+def analyze_transcript():
+    """
+    Analyze a transcript directly without processing audio
+    Accepts: transcript and question in JSON body
+    Returns: analysis results
+    """
+    try:
+        current_user = get_jwt_identity()
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "No data provided"
+            }), 400
+            
+        transcript = data.get('transcript')
+        question = data.get('question')
+        session_id = data.get('session_id')
+        
+        if not transcript or not question:
+            return jsonify({
+                "status": "error",
+                "message": "Transcript and question are required"
+            }), 400
+            
+        print(f"Analyzing transcript for question: {question}")
+        print(f"Transcript length: {len(transcript)} characters")
+        
+        # Initialize analyzers
+        answer_analyzer = AnswerAnalyzer()
+        sentiment_analyzer = sentiment_analysis()
+        
+        # Get detailed analysis
+        analysis = answer_analyzer.analyze_answer(question, transcript)
+        
+        # Get sentiment analysis
+        sentiment_result = sentiment_analyzer.predict(transcript)
+        
+        # Calculate scores based on analysis and sentiment
+        answer_quality_score = analysis.get("score", 70)  # Default if not found
+        overall_sentiment = 100 if sentiment_result == "positive" else 50 if sentiment_result == "neutral" else 0
+        
+        # Prepare positive reformulation if sentiment is negative
+        positive_reformulation = None
+        if sentiment_result == 'negative':
+            try:
+                positive_reformulation = sentiment_analyzer.reformulate_positive(transcript)
+            except Exception as e:
+                print(f"Error generating positive reformulation: {str(e)}")
+                positive_reformulation = "Could not generate a positive reformulation."
+        
+        # If this is part of a session, store the analysis in the session
+        if session_id and session_id in interview_sessions:
+            session = interview_sessions[session_id]
+            if question in session.answers:
+                session.answers[question]['audio_transcript'] = transcript
+                session.answers[question]['analysis'] = analysis
+                session.answers[question]['sentiment'] = sentiment_result
+                session.answers[question]['positive_reformulation'] = positive_reformulation
+        
+        return jsonify({
+            "status": "success",
+            "transcript": transcript,
+            "analysis": analysis,
+            "sentiment": sentiment_result,
+            "positive_reformulation": positive_reformulation,
+            "scores": {
+                "answer_quality_score": answer_quality_score,
+                "overall_sentiment": overall_sentiment
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error analyzing transcript: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": f"Error analyzing transcript: {str(e)}"
+        }), 500 

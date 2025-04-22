@@ -1049,3 +1049,64 @@
 .timer-bar.warning {
     animation: pulse 1s infinite;
 }
+
+/* Sentiment indicators */
+.positive-sentiment {
+    color: #28a745;
+    font-weight: 500;
+}
+
+.negative-sentiment {
+    color: #dc3545;
+    font-weight: 500;
+}
+
+/* Add new styles for microphone status */
+.mic-status {
+    margin-top: 10px;
+    padding: 8px 15px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 300px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.mic-status.granted {
+    background-color: rgba(40, 167, 69, 0.2);
+    border: 1px solid #28a745;
+    color: #218838;
+}
+
+.mic-status.denied {
+    background-color: rgba(220, 53, 69, 0.2);
+    border: 1px solid #dc3545;
+    color: #c82333;
+}
+
+.mic-status i {
+    margin-right: 8px;
+    font-size: 16px;
+}
+
+.mic-status.granted i:before {
+    content: "✓";
+}
+
+.mic-status.denied i:before {
+    content: "✗";
+}
+
+.transcription-box {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+    padding: 10px;
+    margin-top: 20px;
+    max-height: 100px;
+    overflow-y: auto;
+    font-style: italic;
+    color: #6c757d;
+}

@@ -17,10 +17,14 @@ function Interview() {
 	const [isProcessingAnswer, setIsProcessingAnswer] = useState(false); // Processing state
 	const [currentTranscript, setCurrentTranscript] = useState(''); // Store the current transcript
 	const [timeRemaining, setTimeRemaining] = useState(90); // 90 seconds timer
+	const [microphonePermission, setMicrophonePermission] = useState(false); // Track microphone permission status
 	
 	const videoRef = useRef(null);
 	const canvasRef = useRef(null);
 	const streamRef = useRef(null);
+	const audioStreamRef = useRef(null); // For audio stream
+	const mediaRecorderRef = useRef(null); // For MediaRecorder instance
+	const audioChunksRef = useRef([]); // To store audio chunks
 	const sessionIdRef = useRef(null);
 	const recordingIntervalRef = useRef(null);
 	const audioRecordingRef = useRef(false); // Track if audio recording is active
@@ -29,6 +33,7 @@ function Interview() {
 	// Initialize camera when component mounts
 	useEffect(() => {
 		initializeCamera();
+		requestMicrophonePermission(); // Request microphone permission
 		fetchQuestions();
 		
 		// Cleanup on component unmount
@@ -42,9 +47,237 @@ function Interview() {
 			if (streamRef.current) {
 				streamRef.current.getTracks().forEach(track => track.stop());
 			}
+			if (audioStreamRef.current) {
+				audioStreamRef.current.getTracks().forEach(track => track.stop());
+			}
 			window.removeEventListener('keydown', handleKeyPress);
 		};
 	}, []);
+
+	// Request microphone permission
+	const requestMicrophonePermission = async () => {
+		try {
+			const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			audioStreamRef.current = audioStream;
+			setMicrophonePermission(true);
+			console.log('Microphone permission granted');
+			
+			// Stop the stream for now, we'll start it again when recording begins
+			audioStream.getTracks().forEach(track => track.stop());
+		} catch (err) {
+			console.error('Microphone permission denied:', err);
+			setError('Microphone permission denied. Please grant permission to use the microphone.');
+			setMicrophonePermission(false);
+		}
+	};
+
+	// Start audio recording using MediaRecorder
+	const startAudioRecording = async () => {
+		try {
+			// Get audio stream
+			const audioStream = await navigator.mediaDevices.getUserMedia({ 
+				audio: {
+					echoCancellation: true,
+					noiseSuppression: true,
+					autoGainControl: true
+				} 
+			});
+			audioStreamRef.current = audioStream;
+			
+			// Initialize MediaRecorder with WAV codec using PCM format
+			// This creates files that are easier to process without conversion
+			const options = { 
+				mimeType: 'audio/wav' 
+			};
+			
+			// Check if WAV recording is supported, fallback to WebM
+			if (!MediaRecorder.isTypeSupported('audio/wav')) {
+				console.log("WAV recording not supported, using WebM as fallback");
+				options.mimeType = 'audio/webm;codecs=opus';
+			} else {
+				console.log("Using WAV recording format");
+			}
+			
+			const mediaRecorder = new MediaRecorder(audioStream, options);
+			mediaRecorderRef.current = mediaRecorder;
+			
+			// Clear previous audio chunks
+			audioChunksRef.current = [];
+			
+			// Handle dataavailable event
+			mediaRecorder.ondataavailable = (event) => {
+				if (event.data.size > 0) {
+					audioChunksRef.current.push(event.data);
+					console.log(`Audio chunk captured, size: ${event.data.size} bytes, type: ${event.data.type}`);
+				}
+			};
+			
+			// Start recording
+			mediaRecorder.start(3000); // Collect data every 3 seconds
+			console.log('MediaRecorder started with format:', mediaRecorder.mimeType);
+			
+			audioRecordingRef.current = true;
+		} catch (err) {
+			console.error('Error starting audio recording:', err);
+			setError('Failed to start audio recording. Please ensure microphone permissions are granted.');
+		}
+	};
+
+	// Simplified stopAudioRecording function that only uses backend processing
+	const stopAudioRecording = async () => {
+		return new Promise((resolve, reject) => {
+			try {
+				if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
+					console.warn('MediaRecorder not active, nothing to stop');
+					resolve(null);
+					return;
+				}
+				
+				// Define event for when recording stops
+				mediaRecorderRef.current.onstop = async () => {
+					try {
+						const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current.mimeType });
+						console.log(`Audio recording completed, size: ${audioBlob.size} bytes, type: ${mediaRecorderRef.current.mimeType}`);
+						
+						// Stop all audio tracks
+						if (audioStreamRef.current) {
+							audioStreamRef.current.getTracks().forEach(track => track.stop());
+						}
+						
+						// Process audio using backend transcription
+						if (audioBlob.size > 0) {
+							console.log("Sending audio to backend for processing...");
+							setIsProcessingAnswer(true);
+							setCurrentTranscript("Processing your answer...");
+							
+							try {
+								// Convert blob to base64
+								const reader = new FileReader();
+								reader.readAsDataURL(audioBlob);
+								
+								// Wait for file reading to complete
+								const base64Audio = await new Promise((resolve) => {
+									reader.onloadend = () => resolve(reader.result);
+								});
+								
+								// Send to backend process-audio endpoint
+								console.log("Sending audio to backend for processing, size:", audioBlob.size, "bytes");
+								
+								const audioResponse = await fetch('http://localhost:5000/api/interview/process-audio', {
+									method: 'POST',
+									headers: {
+										'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`,
+										'Content-Type': 'application/json'
+									},
+									body: JSON.stringify({
+										session_id: sessionIdRef.current,
+										audio_data: base64Audio,
+										question: questions[currentQuestionIndex]
+									})
+								});
+								
+								if (audioResponse.ok) {
+									const audioData = await audioResponse.json();
+									
+									// Check if we got a valid transcription or an error message
+									const backendTranscript = audioData.transcription || '';
+									console.log('Backend transcription result:', backendTranscript);
+									
+									// If the backend returns a message in brackets, it's likely an error or status message
+									if (backendTranscript.startsWith('[') && 
+										(backendTranscript.includes('Error') || 
+										backendTranscript.includes('No speech') ||
+										backendTranscript.includes('too quiet'))) {
+										
+										// Show user-friendly version of the error
+										if (backendTranscript.includes('too quiet')) {
+											setCurrentTranscript("Your audio was too quiet. Please speak louder or move closer to the microphone.");
+										} else if (backendTranscript.includes('No speech')) {
+											setCurrentTranscript("No speech was detected. Please speak clearly into your microphone.");
+										} else if (backendTranscript.includes('Audio file too short')) {
+											setCurrentTranscript("The recording was too short. Please speak for a longer period.");
+										} else {
+											setCurrentTranscript("Speech transcription failed. Please try again and speak clearly.");
+										}
+										
+										// Use the backend message as the transcript for processing
+										transcription = backendTranscript;
+									} else {
+										// We got a valid transcription
+										transcription = backendTranscript;
+										setCurrentTranscript(transcription);
+									}
+									
+									// Only try to analyze if we have a real transcription
+									if (transcription && 
+										!transcription.startsWith('[') && 
+										transcription.trim().length > 0) {
+										
+										try {
+											// Simple check if server is still responding
+											const pingResponse = await fetch('http://localhost:5000/api/interview/process-audio', { 
+												method: 'OPTIONS' 
+											}).catch(() => null);
+											
+											if (pingResponse && pingResponse.ok) {
+												// Server is responding, try to analyze
+												const analysisResponse = await fetch('http://localhost:5000/api/interview/analyze-transcript', {
+													method: 'POST',
+													headers: {
+														'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`,
+														'Content-Type': 'application/json'
+													},
+													body: JSON.stringify({
+														session_id: sessionIdRef.current,
+														transcript: transcription,
+														question: questions[currentQuestionIndex]
+													})
+												});
+												
+												if (analysisResponse.ok) {
+													const analysisResult = await analysisResponse.json();
+													console.log("Analysis result:", analysisResult);
+												} else {
+													console.error("Error analyzing transcript:", await analysisResponse.text());
+												}
+											} else {
+												console.log("Server not responding for analysis, skipping analyze-transcript call");
+											}
+										} catch (analysisError) {
+											console.error("Network error when analyzing transcript:", analysisError);
+										}
+									}
+								} else {
+									console.error("Error from backend transcription:", await audioResponse.text());
+									setCurrentTranscript("Error transcribing audio. Please try again.");
+								}
+							} catch (backendError) {
+								console.error("Error with backend transcription:", backendError);
+								setCurrentTranscript("Error processing audio. Please try again.");
+							}
+						} else {
+							console.warn("Audio blob is empty, skipping transcription");
+							setCurrentTranscript("No audio recorded. Please try again.");
+						}
+						
+						resolve(audioBlob);
+					} catch (error) {
+						console.error("Error in onstop handler:", error);
+						setCurrentTranscript("Error processing recording. Please try again.");
+						reject(error);
+					}
+				};
+				
+				// Stop the recorder
+				mediaRecorderRef.current.stop();
+				console.log('MediaRecorder stopped');
+				
+			} catch (err) {
+				console.error('Error stopping audio recording:', err);
+				reject(err);
+			}
+		});
+	};
 
 	// Timer related functions
 	const startTimer = () => {
@@ -87,6 +320,18 @@ function Interview() {
 		if (timeRemaining <= 10) return '#dc3545'; // Red when 10 seconds or less
 		if (timeRemaining <= 30) return '#ffc107'; // Yellow when 30 seconds or less
 		return '#0d6efd'; // Default blue
+	};
+	
+	// Function to convert sentiment score to display text and icon
+	const getSentimentDisplay = (sentimentScore) => {
+		// 0 is negative, 100 is positive based on our backend logic
+		const isPositive = sentimentScore >= 50;
+		
+		return {
+			text: isPositive ? "Positive" : "Negative",
+			className: isPositive ? "positive-sentiment" : "negative-sentiment",
+			icon: isPositive ? "✓" : "✗"
+		};
 	};
 	
 	// Fetch random questions
@@ -188,24 +433,8 @@ function Interview() {
 			// Start recording frames
 			recordingIntervalRef.current = setInterval(recordFrame, 1000/10); // 10 FPS
 			
-			// Start audio recording via backend
-			const audioResponse = await fetch('http://localhost:5000/api/interview/start-audio', {
-				method: 'POST',
-				headers: {
-					'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`,
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					session_id: sessionId,
-					question: questions[currentQuestionIndex]
-				})
-			});
-			
-			if (!audioResponse.ok) {
-				console.error('Failed to start audio recording');
-			} else {
-				audioRecordingRef.current = true;
-			}
+			// Start audio recording
+			await startAudioRecording();
 			
 			// Start the timer
 			startTimer();
@@ -293,7 +522,7 @@ function Interview() {
 			}
 
 			const data = await response.json();
-			console.log('Frame recorded successfully:', data);
+			setFrameCount(prevCount => prevCount + 1);
 
 		} catch (err) {
 			console.error('Frame recording error:', err);
@@ -322,82 +551,131 @@ function Interview() {
 				// Stop audio recording if it was started
 				if (audioRecordingRef.current) {
 					try {
-						const audioResponse = await fetch('http://localhost:5000/api/interview/stop-audio', {
+						// Stop local MediaRecorder
+						const audioBlob = await stopAudioRecording();
+						
+						if (audioBlob && audioBlob.size > 0) {
+							console.log(`Audio recorded successfully: ${audioBlob.size} bytes, type: ${audioBlob.type}`);
+							
+							// The transcript is already set by the stopAudioRecording function
+							transcriptResult = currentTranscript;
+							
+							// Add a small delay to ensure the transcript is processed
+							await new Promise(resolve => setTimeout(resolve, 1000));
+						}
+						
+						// Now just update the flag
+						audioRecordingRef.current = false;
+					} catch (audioErr) {
+						console.error('Error stopping audio recording:', audioErr);
+					}
+				}
+				
+				let backendSuccess = false;
+				
+				// Try to send data to backend
+				try {
+					// Try to connect to backend with a simple OPTIONS request
+					const pingSuccess = await fetch('http://localhost:5000/api/test-connection', { 
+						method: 'GET'
+					})
+					.then(res => res.ok)
+					.catch(() => false);
+					
+					if (pingSuccess) {
+						// If backend is available, proceed with stop interview call
+						const response = await fetch('http://localhost:5000/api/interview/stop', {
 							method: 'POST',
 							headers: {
 								'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`,
 								'Content-Type': 'application/json'
 							},
-							body: JSON.stringify({
+							body: JSON.stringify({ 
 								session_id: sessionIdRef.current,
-								question: questions[currentQuestionIndex]
+								transcript: transcriptResult
 							})
 						});
-						
-						if (audioResponse.ok) {
-							const audioData = await audioResponse.json();
-							transcriptResult = audioData.transcript || '';
-							setCurrentTranscript(transcriptResult);
-							console.log('Audio recording stopped. Transcript:', transcriptResult);
+		
+						if (response.ok) {
+							backendSuccess = true;
+							const data = await response.json();
+							console.log('Attempt results:', data);
+							
+							// Store results for this attempt
+							const currentQuestion = questions[currentQuestionIndex];
+							const attemptResults = {
+								posture_score: data.final_scores?.posture_score || 0,
+								eye_contact_score: data.final_scores?.eye_contact_score || 0,
+								smile_percentage: data.final_scores?.smile_percentage || 0,
+								answer_quality_score: data.final_scores?.answer_quality_score || 0,
+								overall_sentiment: data.final_scores?.overall_sentiment || 0,
+								overall_score: data.final_scores?.overall_score || 0,
+								attempt: currentAttempt,
+								transcript: transcriptResult,
+								answer_analysis: data.answer_analysis || {}
+							};
+							
+							// Update question results
+							setQuestionResults(prev => {
+								const questionData = prev[currentQuestion] || { attempts: [], bestAttempt: null };
+								const attempts = [...questionData.attempts, attemptResults];
+								
+								// Determine best attempt based on overall score
+								const bestAttempt = attempts.reduce((best, current) => 
+									(best === null || current.overall_score > best.overall_score) ? current : best, null);
+								
+								return {
+									...prev,
+									[currentQuestion]: {
+										attempts,
+										bestAttempt
+									}
+								};
+							});
+						} else {
+							throw new Error('Failed to stop interview, backend returned error');
 						}
-					} catch (audioErr) {
-						console.error('Error stopping audio recording:', audioErr);
+					} else {
+						throw new Error('Backend server not responding');
 					}
+				} catch (fetchError) {
+					console.error('Backend communication error:', fetchError);
 					
-					audioRecordingRef.current = false;
+					if (!backendSuccess) {
+						// Create fallback results using only local data
+						const currentQuestion = questions[currentQuestionIndex];
+						const fallbackResults = {
+							posture_score: 50, // Default fallback values
+							eye_contact_score: 50,
+							smile_percentage: 50,
+							answer_quality_score: 50,
+							overall_sentiment: 50,
+							overall_score: 50,
+							attempt: currentAttempt,
+							transcript: transcriptResult,
+							answer_analysis: {
+								feedback: "Your answer was recorded successfully, but we couldn't analyze it due to server issues."
+							}
+						};
+						
+						// Show an error message but don't make it seem too serious
+						setError('Backend analysis is unavailable, but your answer was recorded successfully.');
+						
+						// Update question results with fallback data
+						setQuestionResults(prev => {
+							const questionData = prev[currentQuestion] || { attempts: [], bestAttempt: null };
+							const attempts = [...questionData.attempts, fallbackResults];
+							
+							return {
+								...prev,
+								[currentQuestion]: {
+									attempts,
+									bestAttempt: attempts[0] // Set first attempt as best since we have no scores
+								}
+							};
+						});
+					}
 				}
-				
-				// Stop the video recording and send the transcript
-				const response = await fetch('http://localhost:5000/api/interview/stop', {
-					method: 'POST',
-					headers: {
-						'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`,
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify({ 
-						session_id: sessionIdRef.current,
-						transcript: transcriptResult // Send the transcript from backend
-					})
-				});
-
-				if (!response.ok) {
-					throw new Error('Failed to stop interview');
-				}
-
-				const data = await response.json();
-				console.log('Attempt results:', data);
-				
-				// Store results for this attempt
-				const currentQuestion = questions[currentQuestionIndex];
-				const attemptResults = {
-					posture_score: data.final_scores?.posture_score || 0,
-					eye_contact_score: data.final_scores?.eye_contact_score || 0,
-					smile_percentage: data.final_scores?.smile_percentage || 0,
-					answer_quality_score: data.final_scores?.answer_quality_score || 0,
-					overall_sentiment: data.final_scores?.overall_sentiment || 0,
-					overall_score: data.final_scores?.overall_score || 0,
-					attempt: currentAttempt,
-					transcript: transcriptResult,
-					answer_analysis: data.answer_analysis || {}
-				};
-				
-				// Update question results
-				setQuestionResults(prev => {
-					const questionData = prev[currentQuestion] || { attempts: [], bestAttempt: null };
-					const attempts = [...questionData.attempts, attemptResults];
-					
-					// Determine best attempt based on overall score
-					const bestAttempt = attempts.reduce((best, current) => 
-						(best === null || current.overall_score > best.overall_score) ? current : best, null);
-					
-					return {
-						...prev,
-						[currentQuestion]: {
-							attempts,
-							bestAttempt
-						}
-					};
-				});
 				
 				// Set status after recording stops
 				setIsProcessingAnswer(false);
@@ -406,7 +684,7 @@ function Interview() {
 			}
 		} catch (err) {
 			setIsProcessingAnswer(false);
-			setError('Failed to stop recording');
+			setError('Failed to stop recording: ' + err.message);
 			console.error('Stop recording error:', err);
 			setStatus('ready');
 		}
@@ -525,13 +803,30 @@ function Interview() {
 							</div>
 						)}
 						
+						{/* Display microphone permission status */}
+						{status === 'ready' && (
+							<div className={`mic-status ${microphonePermission ? 'granted' : 'denied'}`}>
+								<i></i>
+								{microphonePermission 
+									? 'Microphone access granted' 
+									: 'Microphone access denied. Please grant microphone permission.'}
+							</div>
+						)}
+						
 						{status === 'recording' && (
 							<>
-								{/* <div className="recording-instructions">
+								<div className="recording-instructions">
 									<h3>Recording in progress</h3>
-									<p>Click "Stop Recording" when you're done.</p>
-								</div> */}
+									<p>Speak clearly into your microphone. Click "Stop Recording" when you're done.</p>
+								</div>
 							</>
+						)}
+						
+						{/* Display current transcription if available */}
+						{currentTranscript && status === 'attempt_completed' && (
+							<div className="transcription-box">
+								<strong>Your answer:</strong> {currentTranscript}
+							</div>
 						)}
 
 						<div className="controls">
@@ -655,13 +950,15 @@ function Interview() {
 								<span className="score-label">Smile</span>
 								<span className="score-value">{results.smile_percentage.toFixed(1)}%</span>
 							</div>
-							<div className="score-item">
+							{/* <div className="score-item">
 								<span className="score-label">Answer Quality</span>
 								<span className="score-value">{results.answer_quality_score.toFixed(1)}%</span>
-							</div>
+							</div> */}
 							<div className="score-item">
 								<span className="score-label">Overall Sentiment</span>
-								<span className="score-value">{results.overall_sentiment.toFixed(1)}%</span>
+								<span className={`score-value ${getSentimentDisplay(results.overall_sentiment).className}`}>
+									{getSentimentDisplay(results.overall_sentiment).icon} {getSentimentDisplay(results.overall_sentiment).text}
+								</span>
 							</div>
 						</div>
 						
