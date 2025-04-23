@@ -8,7 +8,9 @@ from config import OPENROUTER_API_KEY, OPENROUTER_API_URL, OPENROUTER_MODEL
 from typing import Dict, List, Any
 
 class AnswerAnalyzer:
+    # Main class for analyzing interview answers using AI
     def __init__(self):
+        # Initialize with API credentials and load the interview dataset
         self.api_key = OPENROUTER_API_KEY
         self.api_url = OPENROUTER_API_URL
         self.model = OPENROUTER_MODEL
@@ -16,6 +18,7 @@ class AnswerAnalyzer:
 
     def _load_answer_sheet(self) -> pd.DataFrame:
         """Load the HireVue answer sheet from CSV"""
+        # Load interview questions and sample answers from CSV file
         current_dir = os.path.dirname(os.path.abspath(__file__))
         answer_sheet_path = os.path.join(current_dir, '..', 'dataset', 'hirevue-answer-sheet.csv')
         return pd.read_csv(answer_sheet_path)
@@ -31,7 +34,7 @@ class AnswerAnalyzer:
         Returns:
             List of randomly selected questions
         """
-        # Get all questions from the answer sheet
+        # Select diverse interview questions using secure randomization
         all_questions = self.answer_sheet['BEHAVIORAL_QUESTIONS'].tolist()
         
         # Create a dictionary to track first words
@@ -64,6 +67,7 @@ class AnswerAnalyzer:
 
     def _get_reference_answers(self, question: str) -> Dict[str, str]:
         """Get reference positive and negative answers for a given question"""
+        # Retrieve sample good/bad answers for a specific question
         matching_row = self.answer_sheet[self.answer_sheet['BEHAVIORAL_QUESTIONS'] == question]
         if matching_row.empty:
             return {"positive": "", "negative": ""}
@@ -76,7 +80,7 @@ class AnswerAnalyzer:
         """
         Analyze the answer using the HireVue answer sheet as reference
         """
-        # Get reference answers
+        # Core function: Analyzes candidate's answer using AI
         reference_answers = self._get_reference_answers(question)
         
         # Prepare the prompt for the model
@@ -119,7 +123,7 @@ class AnswerAnalyzer:
         IMPORTANT: Be SUPER SPECIFIC in your analysis of strengths and weaknesses. Avoid generic statements like "Good communication skills" and instead provide detailed observations like "Effectively articulated how they resolved a conflict by using active listening and compromise." Also feedback can be longer if needed. 
         """
         
-        # Make the API request
+        # Setup API request parameters
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "HTTP-Referer": "http://localhost:3000",
@@ -136,6 +140,7 @@ class AnswerAnalyzer:
         }
         
         try:
+            # Send request to OpenRouter API
             print("\nMaking API request...")
             print(f"API URL: {self.api_url}")
             print(f"Model: {self.model}")
@@ -145,7 +150,7 @@ class AnswerAnalyzer:
             print(f"\nResponse status code: {response.status_code}")
             print(f"Response headers: {response.headers}")
             
-            # Check for error responses
+            # Handle error responses
             if response.status_code != 200:
                 error_response = response.json()
                 print(f"\nError response: {error_response}")
@@ -155,7 +160,7 @@ class AnswerAnalyzer:
                     "details": error_response.get("error", {}).get("message", "Unknown error")
                 }
             
-            # Parse the response
+            # Process successful API response
             result = response.json()
             print("\nAPI Response received")
             print(f"Response content: {result}")
@@ -167,7 +172,7 @@ class AnswerAnalyzer:
             print("\nParsing content...")
             print(f"Raw content: {content}")
             
-            # Try to find JSON in the content
+            # Extract and parse JSON from AI response
             try:
                 # Find the first { and last } to extract JSON
                 start = content.find('{')
@@ -179,7 +184,7 @@ class AnswerAnalyzer:
                 print(f"\nExtracted JSON string: {json_str}")
                 analysis = json.loads(json_str)
                 
-                # User feedback will be given here
+                # Format final response with analysis results
                 return {
                     "score": analysis.get("score", 0),
                     "strengths": analysis.get("strengths", []),
@@ -192,6 +197,7 @@ class AnswerAnalyzer:
                 }
                 
             except json.JSONDecodeError as e:
+                # Handle JSON parsing errors
                 print(f"\nError parsing JSON: {str(e)}")
                 print(f"Content received: {content}")
                 return {
@@ -201,12 +207,14 @@ class AnswerAnalyzer:
                 }
             
         except requests.exceptions.RequestException as e:
+            # Handle network or API request errors
             print(f"\nError making API request: {str(e)}")
             return {
                 "error": "Failed to analyze answer",
                 "details": str(e)
             }
         except Exception as e:
+            # Catch any other unexpected errors
             print(f"\nUnexpected error: {str(e)}")
             return {
                 "error": "Unexpected error occurred",
@@ -217,6 +225,7 @@ class AnswerAnalyzer:
         """
         Analyze multiple Q&A pairs
         """
+        # Batch process multiple question-answer pairs at once
         analyses = []
         for question_id, pair in qa_pairs.items():
             analysis = self.analyze_answer(pair["question"], pair["answer"])

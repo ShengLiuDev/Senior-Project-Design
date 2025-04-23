@@ -30,7 +30,7 @@ function Interview() {
 	const audioRecordingRef = useRef(false); // Track if audio recording is active
 	const timerIntervalRef = useRef(null); // Track timer interval
 
-	// Initialize camera when component mounts
+	// Sets up camera, mic, and questions when component loads
 	useEffect(() => {
 		initializeCamera();
 		requestMicrophonePermission(); // Request microphone permission
@@ -54,7 +54,7 @@ function Interview() {
 		};
 	}, []);
 
-	// Request microphone permission
+	// Requests microphone access from the browser
 	const requestMicrophonePermission = async () => {
 		try {
 			const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -71,7 +71,7 @@ function Interview() {
 		}
 	};
 
-	// Start audio recording using MediaRecorder
+	// Initializes and starts audio recording
 	const startAudioRecording = async () => {
 		try {
 			// Get audio stream
@@ -123,7 +123,7 @@ function Interview() {
 		}
 	};
 
-	// Improved audio recording function that works with new backend transcription
+	// Stops audio recording and sends data to backend for transcription
 	const stopAudioRecording = async () => {
 		return new Promise((resolve, reject) => {
 			try {
@@ -327,7 +327,7 @@ function Interview() {
 		});
 	};
 
-	// Timer related functions
+	// Starts the interview timer countdown
 	const startTimer = () => {
 		// Reset timer to 90 seconds
 		setTimeRemaining(90);
@@ -351,6 +351,7 @@ function Interview() {
 		}, 1000);
 	};
 	
+	// Stops the interview timer
 	const stopTimer = () => {
 		if (timerIntervalRef.current) {
 			clearInterval(timerIntervalRef.current);
@@ -358,19 +359,19 @@ function Interview() {
 		}
 	};
 	
-	// Calculate timer progress percentage
+	// Calculates the timer progress percentage for UI display
 	const getTimerProgress = () => {
 		return (timeRemaining / 90) * 100;
 	};
 	
-	// Determine timer color based on remaining time
+	// Returns appropriate color for timer based on time left
 	const getTimerColor = () => {
 		if (timeRemaining <= 10) return '#dc3545'; // Red when 10 seconds or less
 		if (timeRemaining <= 30) return '#ffc107'; // Yellow when 30 seconds or less
 		return '#0d6efd'; // Default blue
 	};
 	
-	// Render transcript with better formatting and indicators
+	// Renders the transcript with appropriate styling based on state
 	const renderTranscript = () => {
 		if (isProcessingAnswer) {
 			return (
@@ -401,7 +402,7 @@ function Interview() {
 		) : null;
 	};
 	
-	// Function to convert sentiment score to display text and icon
+	// Converts sentiment score to user-friendly display text and icon
 	const getSentimentDisplay = (sentimentScore) => {
 		// 0 is negative, 100 is positive based on our backend logic
 		const isPositive = sentimentScore >= 50;
@@ -413,7 +414,7 @@ function Interview() {
 		};
 	};
 	
-	// Fetch random questions
+	// Fetches interview questions from the backend
 	const fetchQuestions = async () => {
 		try {
 			setIsLoadingQuestions(true);
@@ -451,7 +452,7 @@ function Interview() {
 		}
 	};
 
-	// Initialize camera
+	// Initializes the camera for video capture
 	const initializeCamera = async () => {
 		try {
 			setStatus('initializing');
@@ -475,7 +476,7 @@ function Interview() {
 		}
 	};
 
-	// Start interview session
+	// Starts a new interview session
 	const startInterview = async () => {
 		try {
 			setStatus('recording');
@@ -525,7 +526,7 @@ function Interview() {
 		}
 	};
 
-	// Try again for the current question
+	// Allows user to try answering the current question again
 	const tryAgain = () => {
 		if (currentAttempt < 3) {
 			setCurrentAttempt(currentAttempt + 1);
@@ -536,7 +537,7 @@ function Interview() {
 		}
 	};
 
-	// Move to next question
+	// Moves to the next question or completes interview
 	const nextQuestion = () => {
 		if (currentQuestionIndex < questions.length - 1) {
 			setCurrentQuestionIndex(currentQuestionIndex + 1);
@@ -548,7 +549,7 @@ function Interview() {
 		}
 	};
 
-	// Record a single frame
+	// Captures and sends a video frame to the backend
 	const recordFrame = async () => {
 		try {
 			if (!canvasRef.current || !videoRef.current || !sessionIdRef.current) {
@@ -608,7 +609,7 @@ function Interview() {
 		}
 	};
 
-	// Stop recording for current attempt
+	// Stops recording and processes current question attempt results
 	const stopRecording = async () => {
 		try {
 			// Stop the timer
@@ -662,7 +663,7 @@ function Interview() {
 					.catch(() => false);
 					
 					if (pingSuccess) {
-						// If backend is available, proceed with stop interview call
+						// If backend is available, send stop command
 						const response = await fetch('http://localhost:5000/api/interview/stop', {
 							method: 'POST',
 							headers: {
@@ -773,7 +774,7 @@ function Interview() {
 		}
 	};
 
-	// Complete the entire interview
+	// Finalizes interview and calculates overall results
 	const completeInterview = async () => {
 		try {
 			setStatus('processing');
@@ -816,22 +817,12 @@ function Interview() {
 		}
 	};
 
-	// Handle ESC key press
+	// Handles ESC key press to stop recording
 	const handleKeyPress = (event) => {
 		if (event.key === 'Escape' && status === 'recording') {
 			stopRecording();
 		}
 	};
-
-	// Add ESC key listener when component mounts and status is recording
-	useEffect(() => {
-		if (status === 'recording') {
-			window.addEventListener('keydown', handleKeyPress);
-		}
-		return () => {
-			window.removeEventListener('keydown', handleKeyPress);
-		};
-	}, [status]);
 
 	return (
 		<div>

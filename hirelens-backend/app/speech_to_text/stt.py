@@ -13,6 +13,7 @@ import secrets
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.append(project_root)
 
+# Answer analysis and sentiment analysis functionality 
 from app.answer_analysis.analyzer import AnswerAnalyzer
 from app.sentiment_analysis.sentiment_analysis_functions import sentiment_analysis
 
@@ -109,7 +110,7 @@ class InterviewRecorder:
             return None
 
     def _record_audio(self, filename, duration):
-        """Internal method to record audio"""
+        """Internal method to record audio if RealTimeSTT is not working (Fallback)"""
         p = pyaudio.PyAudio()
         stream = p.open(format=self.FORMAT,
                        channels=self.CHANNELS,
@@ -168,7 +169,7 @@ class InterviewRecorder:
         return text
 
     def _analyze_answer(self, text, question):
-        """Internal method to analyze the answer"""
+        """Internal method to analyze the answer using the AnswerAnalyzer class"""
         # Get answer analysis
         analysis = self.answer_analyzer.analyze_answer(question, text)
         
@@ -191,7 +192,10 @@ class InterviewRecorder:
             time.sleep(1)
 
     def _check_for_key(self, stop_event):
-        """Check for Enter or Space key press"""
+        """
+        Check for Enter or Space key press
+        Might not use this method since Pablo already implemented esc key functionality in the frontend
+        """
         if platform.system() == 'Windows':
             import msvcrt
             while not stop_event.is_set():
@@ -220,7 +224,7 @@ class InterviewRecorder:
 
     def transcribe_from_file(self, audio_file_path):
         """
-        Transcribe audio from an existing file
+        Transcribe audio from audio file
         
         Args:
             audio_file_path: Path to the audio file
@@ -304,7 +308,7 @@ class InterviewRecorder:
             return f"[Error during transcription: {str(e)}]"
 
 def get_random_questions(num_questions=3):
-    """Get random interview questions"""
+    """Get random interview questions using secrets module for secure randomization in the analyzer.py file"""
     try:
         analyzer = AnswerAnalyzer()
         return analyzer.get_random_questions(num_questions)
@@ -313,7 +317,11 @@ def get_random_questions(num_questions=3):
         return []
 
 def main():
-    """Main function to run the interview recorder"""
+    """
+    Main function to run the interview recorder
+    Also used for testing and debugging purposes here
+    """
+    
     print("\n=== Interview Recording System ===")
     
     # Get random questions
