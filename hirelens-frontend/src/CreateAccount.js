@@ -1,6 +1,10 @@
 import Header from './Header';
 import { Link } from 'react-router-dom';
 import './FrontPage.css';
+
+/* 
+	Might implement account creation here, but may stick to Google OAuth for security and simplicity
+*/
 function CreateAccount() {
 	return (
 		<div>

@@ -1,6 +1,8 @@
 from app.database import interviews, test_connection
 from datetime import datetime
 
+"""For testing the database connection and CRUD operations"""
+
 def test_crud():
     print("\n=== Testing MongoDB Connection ===")
     if not test_connection():

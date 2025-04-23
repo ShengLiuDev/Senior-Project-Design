@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import './Header.css';
 
+/*
+  Nav bar component
+ */
 function Header() {
 	const [username, setUsername] = useState('');
 	const [showDropdown, setShowDropdown] = useState(false);

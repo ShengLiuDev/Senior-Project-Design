@@ -5,6 +5,11 @@ import traceback
 from app import create_app
 from app.database import test_connection
 
+"""
+    Will be the main file for the backend, it will be used to start the backend server and the database
+    Also script file will run this file to start the server and general backend functionality
+"""
+
 def check_mongodb_connection():
     """Check if MongoDB is running and accessible"""
     max_retries = 5

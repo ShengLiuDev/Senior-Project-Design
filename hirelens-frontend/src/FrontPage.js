@@ -13,6 +13,9 @@ function FrontPage() {
       .catch((error) => console.error("Error fetching data:", error));
   }, []);
 
+  /* 
+    Display the main page of the application
+  */
   return (
     <div>
 		<Header />

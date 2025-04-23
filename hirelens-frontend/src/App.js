@@ -8,6 +8,11 @@ import AllResults from './AllResults';
 import ProtectedRoute from './ProtectedRoute';
 import TestAudio from './TestAudio';
 
+/**
+ * This is the main component for the frontend
+ * It is the parent component for all the other components
+ * Also contains the routes for the application
+ */
 function App() {
   return (
     <Router>

@@ -3,6 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import Header from './Header';
 import './FrontPage.css';
 
+/**
+ * This component displays all the interview results for the user
+ * It fetches the results from the backend and displays them in a list
+ * It also has a button to navigate back to the score homepage
+ */
+
 function AllResults() {
     const navigate = useNavigate();
     const [results, setResults] = useState([]);

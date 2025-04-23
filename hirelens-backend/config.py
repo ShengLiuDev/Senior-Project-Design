@@ -1,3 +1,6 @@
+"""
+    Second config file for the backend, this one is the complete w database and JWT along with login 
+"""
 import os
 from datetime import timedelta
 from dotenv import load_dotenv
