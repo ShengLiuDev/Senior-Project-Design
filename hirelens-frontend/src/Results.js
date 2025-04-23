@@ -3,6 +3,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import Header from './Header';
 import './FrontPage.css';
 
+/* 
+    This is the results page that displays the results of the interview, however, interview.js may 
+    contain the results instead of this component so temporary file we may remove down the line
+*/
+
 function Results() {
     const location = useLocation();
     const navigate = useNavigate();

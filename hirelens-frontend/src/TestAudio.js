@@ -1,5 +1,12 @@
 import React, { useState, useRef } from 'react';
 
+/* 
+    Frontend audio testing page, backend currently works with RealTimeSTT, however
+    due to web browser security limitations, we may have to use a different method
+    for transcription, such as Whisper API or Google Speech to Text or maybe even Claude 
+    or DeepSeek R1 over V3 due to compatibility issues
+*/
+
 function TestAudio() {
     const [recording, setRecording] = useState(false);
     const [transcript, setTranscript] = useState('');

@@ -3,6 +3,9 @@ import Header from './Header';
 import { Link } from 'react-router-dom';
 import './FrontPage.css';
 
+/* 
+	Button functionality for the score homepage
+*/
 function ScoreHomepage() {
 	const navigate = useNavigate();
 
