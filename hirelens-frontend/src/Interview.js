@@ -824,6 +824,16 @@ function Interview() {
 		}
 	};
 
+	// Add ESC key listener when component mounts and status is recording
+	useEffect(() => {
+		if (status === 'recording') {
+			window.addEventListener('keydown', handleKeyPress);
+		}
+		return () => {
+			window.removeEventListener('keydown', handleKeyPress);
+		};
+	}, [status]);
+
 	return (
 		<div>
 			<Header />

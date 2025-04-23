@@ -1,3 +1,7 @@
+""" 
+    Backup transcription method if RealTimeSTT is not working, Whisper API is not working,
+    or if librosa is not working
+"""
 import os
 import sys
 import base64
@@ -30,7 +34,7 @@ class AudioTranscriber:
         
     def transcribe_audio(self, audio_file_path):
         """
-        Transcribe audio file using either OpenRouter API or Google Speech Recognition
+        Transcribe audio file using either OpenRouter API or Google Speech Recognition (might be most reliable)
         
         Args:
             audio_file_path: Path to the audio file
@@ -49,7 +53,7 @@ class AudioTranscriber:
                 
             self.logger.info(f"Processing audio file: {audio_file_path} (size: {file_size} bytes)")
             
-            # Try Google Speech Recognition
+            # Try Google Speech Recognition (most reliable)
             import speech_recognition as sr
             r = sr.Recognizer()
             
@@ -159,7 +163,7 @@ class AudioTranscriber:
             
     def _transcribe_with_openrouter(self, audio_file_path):
         """
-        Transcribe audio using OpenRouter API
+        Transcribe audio using OpenRouter API (alternative)
         
         Args:
             audio_file_path: Path to the audio file

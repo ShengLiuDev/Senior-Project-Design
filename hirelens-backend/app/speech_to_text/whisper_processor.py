@@ -1,3 +1,6 @@
+"""
+    Might get rid of this because whisper is great but outdated and not working as intended with our libraries
+"""
 import os
 import sys
 import subprocess

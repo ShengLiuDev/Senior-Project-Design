@@ -48,15 +48,15 @@ class sentiment_analysis:
             def __init__(self, data, tokenizer, max_length):
                 self.data = data
                 self.tokenizer = tokenizer
-                self.max_length = max_length   # ensures max length of sentiment doesn't exceed this
+                self.max_length = max_length   # Ensures max length of sentiment doesn't exceed this
             
             def __len__(self):
                 return len(self.data)
             
             def __getitem__(self, idx):
                 sentence, sentiment = self.data[idx]
-                # vonvert sentiment to label; 
-                # assuming self.label2id is available in the outer scope
+                # Convert sentiment to label; 
+                # Assuming self.label2id is available in the outer scope
                 
                 if sentiment.lower() == "positive":
                     label = 0 
@@ -70,14 +70,14 @@ class sentiment_analysis:
                     max_length=max_length,
                     return_tensors="pt"
                 )
-                # got from hugging face documentation
+                # Got from hugging face documentation
                 encoding = {key: value.squeeze(0) for key, value in encoding.items()}
                 encoding["labels"] = torch.tensor(label)
                 return encoding
         
         return sentiment_dataset(self.sentences_data, self.tokenizer, max_length)
     
-    # training, evaluation, and prediction methods here.
+    # Training, evaluation, and prediction methods here.
     def train(self, dataset, output_dir="./results", num_train_epochs=3, per_device_train_batch_size=16):
         training_args = TrainingArguments(
             output_dir=output_dir,
@@ -89,8 +89,8 @@ class sentiment_analysis:
             # Note: don't use evaluation_strategy will be deprecated in version 4.46 transformers 
             # use eval_strategy 
             no_cuda=True 
-            # this applies for macbook use only, if you're on windows or a linux system, comment no_cuda out 
-            # this avoids the "RuntimeError: Placeholder storage has not been allocated on MPS device!" error
+            # This applies for macbook use only, if you're on windows or a linux system, comment no_cuda out 
+            # This avoids the "RuntimeError: Placeholder storage has not been allocated on MPS device!" error
         )
         trainer = Trainer(
             model=self.model,
@@ -121,19 +121,19 @@ class sentiment_analysis:
 
     def reformulate_positive(self, text):
         """
-        Generate a more positive version of the given text
+            Generate a more positive version of the given text
         """
         prompt = f"""
-        You are an expert interviewer helping a candidate improve their answer.
-        The candidate's answer is: "{text}"
-        
-        Please provide a more positive and constructive version of this answer,
-        maintaining the same key points but with a more optimistic and confident tone.
-        Focus on:
-        1. Using positive language
-        2. Emphasizing strengths and achievements
-        3. Maintaining professionalism
-        4. Keeping the same core message
+            You are an expert interviewer helping a candidate improve their answer.
+            The candidate's answer is: "{text}"
+            
+            Please provide a more positive and constructive version of this answer,
+            maintaining the same key points but with a more optimistic and confident tone.
+            Focus on:
+            1. Using positive language
+            2. Emphasizing strengths and achievements
+            3. Maintaining professionalism
+            4. Keeping the same core message
         """
         
         # Make the API request
@@ -168,7 +168,4 @@ class sentiment_analysis:
             print(f"Error generating positive reformulation: {str(e)}")
             return "Unable to generate positive reformulation at this time."
 
-# testing
-# lsa = sentiment_analysis(sentences_data)
-# dataset = lsa.prepare_dataset()
-# lsa.train(dataset)
+

@@ -40,9 +40,9 @@ class csv_read_in_functions:
         return temp
 
     """
-    might not be needed since we can already grab it using a single function
-    we could process the sentiment values here (int values)
-    or just return a list of expected_sentiments
+        might not be needed since we can already grab it using a single function
+        we could process the sentiment values here (int values)
+        or just return a list of expected_sentiments
     """
     # def grab_sentiment(self):
     #     return self.df["expected_sentiment"].tolist()
