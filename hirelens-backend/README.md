@@ -6,7 +6,7 @@ The backend server for the HireLens application, providing APIs for interview re
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.9-3.12
 - MongoDB (running on default port 27017)
 - FFmpeg (required for audio processing)
 

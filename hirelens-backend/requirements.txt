@@ -54,3 +54,4 @@ torchvision
 transformers
 accelerate
 librosa
+pandas
