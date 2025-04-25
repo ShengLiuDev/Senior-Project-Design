@@ -7,23 +7,27 @@ The frontend for the HireLens application, providing the UI.
 ### Prerequisites
 
 - npm
-- yarn
 
 ### Installing Dependencies
 
 1. Install npm.
-2. Run
+2. Navigate to the hirelens-frontend folder by running
+```bash
+cd hirelens-frontend
+```
+from the project folder.
+3. Run
 ```bash
 npm i
 ```
-3. Install yarn.
+while in the hirelens-frontend folder to install the required dependencies.
 
 ## Running the Frontend
 
 To start the frontend:
 
 ```bash
-yarn start
+npm run dev
 ```
 
 The frontend will be available at http://localhost:3000
