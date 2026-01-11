@@ -45,39 +45,52 @@ Write-Host "[OK] Python found: $(python --version)" -ForegroundColor Green
 Write-Host "[OK] Node.js found: $(node --version)" -ForegroundColor Green
 Write-Host ""
 
-# Check MongoDB status
-Write-Host "Checking MongoDB status..." -ForegroundColor Yellow
-$mongoRunning = Test-Port 27017
+# Check MongoDB configuration
+Write-Host "Checking MongoDB configuration..." -ForegroundColor Yellow
 
-if (-not $mongoRunning) {
-    Write-Host ""
-    Write-Host "WARNING: MongoDB is not running on localhost:27017" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "Options to fix this:" -ForegroundColor Cyan
-    Write-Host "  1. Start MongoDB locally:"
-    Write-Host "     - If installed as a service: " -NoNewline
-    Write-Host "net start MongoDB" -ForegroundColor White
-    Write-Host "     - Or run: " -NoNewline
-    Write-Host "mongod" -ForegroundColor White
-    Write-Host ""
-    Write-Host "  2. Use MongoDB Atlas (cloud database):"
-    Write-Host "     - Create a .env file in hirelens-backend/ with:"
-    Write-Host "       MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/"
-    Write-Host ""
-    Write-Host "  3. Install MongoDB:"
-    Write-Host "     - Download from: https://www.mongodb.com/try/download/community"
-    Write-Host ""
-    
-    $response = Read-Host "Do you want to continue anyway? (y/N)"
-    if ($response -ne 'y' -and $response -ne 'Y') {
-        Write-Host "Exiting. Please start MongoDB first." -ForegroundColor Red
-        exit 1
+# Check if .env file exists with MongoDB Atlas URI
+$envFile = Join-Path $ScriptDir "hirelens-backend\.env"
+$hasAtlasConfig = $false
+
+if (Test-Path $envFile) {
+    $envContent = Get-Content $envFile -Raw
+    if ($envContent -match "MONGODB_URI.*mongodb\+srv") {
+        $hasAtlasConfig = $true
+        Write-Host "[OK] MongoDB Atlas configured in .env file" -ForegroundColor Green
     }
-    Write-Host ""
-} else {
-    Write-Host "[OK] MongoDB is running on localhost:27017" -ForegroundColor Green
-    Write-Host ""
 }
+
+if (-not $hasAtlasConfig) {
+    # Check local MongoDB
+    $mongoRunning = Test-Port 27017
+    
+    if (-not $mongoRunning) {
+        Write-Host ""
+        Write-Host "WARNING: No MongoDB configuration found" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Options to fix this:" -ForegroundColor Cyan
+        Write-Host "  1. Use MongoDB Atlas (recommended):"
+        Write-Host "     - Create a .env file in hirelens-backend/ with:"
+        Write-Host "       MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/"
+        Write-Host ""
+        Write-Host "  2. Start MongoDB locally:"
+        Write-Host "     - If installed as a service: " -NoNewline
+        Write-Host "net start MongoDB" -ForegroundColor White
+        Write-Host "     - Or run: " -NoNewline
+        Write-Host "mongod" -ForegroundColor White
+        Write-Host ""
+        
+        $response = Read-Host "Do you want to continue anyway? (y/N)"
+        if ($response -ne 'y' -and $response -ne 'Y') {
+            Write-Host "Exiting. Please configure MongoDB first." -ForegroundColor Red
+            exit 1
+        }
+        Write-Host ""
+    } else {
+        Write-Host "[OK] MongoDB is running on localhost:27017" -ForegroundColor Green
+    }
+}
+Write-Host ""
 
 # Backend setup
 Write-Host "Setting up backend..." -ForegroundColor Cyan
