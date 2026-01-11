@@ -44,3 +44,18 @@ ENV/
 *.ogg
 *.flac
 *.aac
+*.webm
+
+# Temporary directories
+temp_audio/
+instance/
+
+# Generated reports
+interview_report.txt
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Database files
+*.db
+*.sqlite3

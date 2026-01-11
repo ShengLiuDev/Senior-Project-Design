@@ -1,11 +1,15 @@
-from app.database import interviews, test_connection
+from app.database import get_interviews_collection, test_connection
 from datetime import datetime
 
 def test_crud():
     print("\n=== Testing MongoDB Connection ===")
     if not test_connection():
-        print("❌ MongoDB connection failed!")
+        print("[FAILED] MongoDB connection failed!")
+        print("Make sure MONGODB_URI is set correctly in your .env file")
         return
+    
+    # Get the collection after connection is verified
+    interviews = get_interviews_collection()
     
     print("\n=== Testing CRUD Operations ===")
     
@@ -27,22 +31,22 @@ def test_crud():
     
     # Insert
     result = interviews.insert_one(test_interview)
-    print(f"✅ Inserted document ID: {result.inserted_id}")
+    print(f"[OK] Inserted document ID: {result.inserted_id}")
     
     # Read
     doc = interviews.find_one({"userId": "test_user_123"})
-    print(f"✅ Found document: {doc}")
+    print(f"[OK] Found document: {doc}")
     
     # Update
     update_result = interviews.update_one(
         {"userId": "test_user_123"},
         {"$set": {"scores.overall_score": 80.0}}
     )
-    print(f"✅ Updated document: {update_result.modified_count} modified")
+    print(f"[OK] Updated document: {update_result.modified_count} modified")
     
     # Delete
     delete_result = interviews.delete_one({"userId": "test_user_123"})
-    print(f"✅ Deleted document: {delete_result.deleted_count} deleted")
+    print(f"[OK] Deleted document: {delete_result.deleted_count} deleted")
     
     print("\n=== All tests completed successfully! ===")
 

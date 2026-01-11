@@ -3,7 +3,7 @@ import time
 import os
 import traceback
 from app import create_app
-from app.database import test_connection
+from app.database import test_connection, init_indexes
 
 def check_mongodb_connection():
     """Check if MongoDB is running and accessible"""
@@ -12,12 +12,12 @@ def check_mongodb_connection():
     
     for i in range(max_retries):
         if test_connection():
-            print("✅ MongoDB connection successful")
+            print("[OK] MongoDB connection successful")
             return True
-        print(f"⏳ Waiting for MongoDB to be ready... (attempt {i+1}/{max_retries})")
+        print(f"[...] Waiting for MongoDB to be ready... (attempt {i+1}/{max_retries})")
         time.sleep(retry_delay)
     
-    print("❌ Failed to connect to MongoDB after multiple attempts")
+    print("[FAILED] Failed to connect to MongoDB after multiple attempts")
     return False
 
 def main():
@@ -29,9 +29,16 @@ def main():
     
     # Wait for MongoDB to be ready
     if not check_mongodb_connection():
-        print("\n❌ MongoDB is not accessible")
-        print("Please start MongoDB manually and try again")
+        print("\n[FAILED] MongoDB is not accessible")
+        print("Please check your MONGODB_URI in .env file")
+        print("For MongoDB Atlas, ensure:")
+        print("  1. Your IP is whitelisted in Atlas Network Access")
+        print("  2. Your connection string is correct")
+        print("  3. Your database user credentials are correct")
         return
+    
+    # Initialize database indexes
+    init_indexes()
     
     # Create and run Flask app
     app = create_app()
@@ -43,7 +50,7 @@ def main():
         from app.speech_to_text.sentiment_analysis import SentimentAnalyzer
         sentiment_analyzer = SentimentAnalyzer()
     except Exception as e:
-        print(f"⚠️ Warning: Error initializing sentiment analyzer: {str(e)}")
+        print(f"[WARNING] Error initializing sentiment analyzer: {str(e)}")
         print("Continuing with fallback functionality")
     
     # Add a simple test route directly to the app
@@ -122,7 +129,7 @@ def main():
         from flask import jsonify
         error_message = str(e)
         traceback.print_exc()
-        print(f"⚠️ Server error: {error_message}")
+        print(f"[ERROR] Server error: {error_message}")
         return jsonify({
             "error": "Internal server error",
             "details": error_message
@@ -133,7 +140,7 @@ def main():
         from flask import jsonify
         error_message = str(e)
         traceback.print_exc()
-        print(f"⚠️ Unhandled exception: {error_message}")
+        print(f"[ERROR] Unhandled exception: {error_message}")
         return jsonify({
             "error": "An unexpected error occurred",
             "details": error_message
@@ -153,9 +160,9 @@ def main():
             use_debugger=app.debug
         )
     except KeyboardInterrupt:
-        print("\n⚠️ Server stopped by user")
+        print("\n[INFO] Server stopped by user")
     except Exception as e:
-        print(f"\n❌ Error starting Flask server: {str(e)}")
+        print(f"\n[FAILED] Error starting Flask server: {str(e)}")
         print("Please check if port 5000 is already in use")
         print("You can try running: lsof -i :5000 (on Mac/Linux) or netstat -ano | findstr :5000 (on Windows) to check what's using the port")
         import traceback

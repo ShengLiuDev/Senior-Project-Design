@@ -1,56 +1,54 @@
+# Flask & Web Framework
 flask
 flask-cors
 flask-jwt-extended
+flask-sqlalchemy
+flask-migrate
+werkzeug
+
+# Database
 pymongo
-numpy
-opencv-python
-mediapipe
-python-dotenv
-requests
-SpeechRecognition
-pyaudio
-RealtimeSTT
-Wave
-librosa
-ffmpeg-python
-pydub
-flask_sqlalchemy
-flask_migrate
-flask_cors
-python-dotenv
-cachetools
-certifi
-charset-normalizer
+dnspython
+
+# Authentication & OAuth
 google-api-core
 google-api-python-client
 google-auth
 google-auth-httplib2
 google-auth-oauthlib
 googleapis-common-protos
-httplib2
-idna
 oauthlib
-pip
-proto-plus
-protobuf
-pyasn1
-pyasn1-modules
-pyparsing
 requests-oauthlib
-rsa
-uritemplate
-urllib3
-flask_jwt_extended
-pymongo
-SpeechRecognition
-pyaudio
-pydub
-pocketsphinx
-numpy
-ffmpeg
-RealtimeSTT
+
+# Machine Learning & AI
 torch
 torchvision
 transformers
 accelerate
+mediapipe
+
+# Computer Vision
+opencv-python
+numpy
+pandas
+
+# Audio Processing & Speech Recognition
+SpeechRecognition
+pyaudio
+pydub
 librosa
+ffmpeg-python
+RealtimeSTT
+pocketsphinx
+
+# Utilities
+python-dotenv
+requests
+cachetools
+
+# Network & HTTP
+certifi
+charset-normalizer
+httplib2
+idna
+urllib3

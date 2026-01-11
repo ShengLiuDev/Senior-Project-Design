@@ -12,8 +12,8 @@ from .facial_recognition.eye_contact_analyzer import EyeContactAnalyzer
 from .facial_recognition.posture_analyzer import PostureAnalyzer
 from .facial_recognition.expression_analyzer import ExpressionAnalyzer
 from datetime import datetime
-from pymongo import MongoClient
 import uuid
+from app.database import get_interviews_collection
 
 import os
 import sys
@@ -30,11 +30,6 @@ sys.path.append(project_root)
 
 routes = Blueprint('routes', __name__)
 CORS(routes)  # Enable CORS for all routes
-
-# Initialize MongoDB connection
-client = MongoClient()
-db = client.hirelens
-interviews = db.interviews  # Create interviews collection
 
 # Global variables to manage interview state
 interview_sessions = {}  # Store multiple session states
@@ -769,7 +764,7 @@ def stop_interview():
             "frame_count": len(original_frames)  # Store original frame count
         }
         
-        result = interviews.insert_one(interview_result)
+        result = get_interviews_collection().insert_one(interview_result)
         
         # Cleanup session
         del interview_sessions[session_id]
@@ -932,7 +927,7 @@ def get_interview_history():
     
     try:
         # Get all interviews for the user, sorted by date
-        user_interviews = list(interviews.find(
+        user_interviews = list(get_interviews_collection().find(
             {"userId": current_user}
         ).sort("date", -1))
         
@@ -960,7 +955,7 @@ def get_all_results():
         print(f"Fetching results for user: {current_user_id}")
         
         # Query all results for the user from MongoDB, ordered by date
-        results = list(interviews.find(
+        results = list(get_interviews_collection().find(
             {"userId": current_user_id}
         ).sort("date", -1))
         
@@ -1045,7 +1040,7 @@ def analyze_interview(interview_id):
         obj_id = ObjectId(interview_id)
         
         # Find the interview in the database
-        interview = interviews.find_one({"_id": obj_id})
+        interview = get_interviews_collection().find_one({"_id": obj_id})
         
         if not interview:
             return jsonify({
@@ -1109,7 +1104,7 @@ def analyze_interview(interview_id):
             }
             
             # Update the interview in the database
-            interviews.update_one(
+            get_interviews_collection().update_one(
                 {"_id": obj_id},
                 {"$set": {"answer_analysis": results}}
             )

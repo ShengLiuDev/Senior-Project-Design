@@ -1,2 +1,2 @@
 # Senior-Project-Design
-Senior Project UF25 
+Colorstack Senior Project UF25 
